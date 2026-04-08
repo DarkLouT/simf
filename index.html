@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIMF — Gestão de Ativos</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─── RESET & TOKENS ──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0d0e11;
+  --panel:     #13151a;
+  --panel2:    #1a1d24;
+  --border:    #252830;
+  --border2:   #1e2128;
+
+  --text:      #f0f2f5;
+  --text2:     #b0b8cc;
+  --text3:     #6e7a90;
+
+  --green:     #22c55e;
+  --green-bg:  rgba(34,197,94,.08);
+  --yellow:    #eab308;
+  --yellow-bg: rgba(234,179,8,.08);
+  --red:       #ef4444;
+  --red-bg:    rgba(239,68,68,.08);
+  --blue:      #3b82f6;
+  --blue-bg:   rgba(59,130,246,.08);
+  --muted-bg:  rgba(120,130,155,.07);
+
+  --radius:    6px;
+  --font:      'Inter', system-ui, sans-serif;
+  --mono:      'JetBrains Mono', monospace;
+}
+
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh; overflow-x: hidden; }
+
+/* ─── SCROLLBAR ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ─── AUTH SCREEN ─────────────────────────────────────────────── */
+#authScreen {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+}
+.auth-box {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 36px 40px; width: 100%; max-width: 360px;
+}
+.auth-logo { font-family: var(--mono); font-size: 11px; color: var(--text3); letter-spacing: 2px; margin-bottom: 28px; }
+.auth-title { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+.auth-sub { color: var(--text2); font-size: 12px; margin-bottom: 28px; }
+.auth-tabs { display: flex; gap: 0; margin-bottom: 24px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.auth-tab { flex: 1; padding: 8px; text-align: center; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text2); background: var(--panel2); transition: background .15s, color .15s; }
+.auth-tab.active { background: var(--panel); color: var(--text); }
+.form-row { margin-bottom: 14px; }
+.form-row label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 5px; font-family: var(--mono); letter-spacing: .5px; }
+.form-row input { width: 100%; background: var(--panel2); border: 1px solid var(--border); color: var(--text); padding: 9px 11px; border-radius: var(--radius); font-size: 13px; font-family: var(--font); outline: none; transition: border-color .15s; }
+.form-row input:focus { border-color: var(--blue); }
+.btn-primary { width: 100%; background: var(--blue); color: #fff; border: none; padding: 10px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+.btn-primary:hover { opacity: .88; }
+.auth-error { color: var(--red); font-size: 12px; margin-bottom: 12px; display: none; padding: 8px 10px; background: var(--red-bg); border-radius: var(--radius); }
+
+/* ─── APP LAYOUT ──────────────────────────────────────────────── */
+#appScreen { display: none; }
+
+header {
+  height: 52px; background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; position: sticky; top: 0; z-index: 100;
+}
+.logo { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--text); display: flex; align-items: center; gap: 10px; }
+.logo-badge { background: var(--panel2); border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; font-size: 10px; color: var(--text3); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-info { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+.role-pill { font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 3px; }
+.role-admin  { background: rgba(59,130,246,.15); color: var(--blue); }
+.role-editor { background: rgba(234,179,8,.12); color: var(--yellow); }
+.role-viewer { background: var(--muted-bg); color: var(--text3); }
+.btn-logout { background: none; border: 1px solid var(--border); color: var(--text2); padding: 5px 12px; border-radius: var(--radius); font-size: 12px; cursor: pointer; transition: border-color .15s, color .15s; }
+.btn-logout:hover { border-color: var(--text3); color: var(--text); }
+
+.layout { display: flex; height: calc(100vh - 52px); }
+
+/* ─── SIDEBAR ─────────────────────────────────────────────────── */
+aside {
+  width: 200px; background: var(--panel); border-right: 1px solid var(--border);
+  padding: 16px 0; flex-shrink: 0; overflow-y: auto; display: flex; flex-direction: column;
+}
+.nav-section { padding: 0 10px; margin-bottom: 20px; }
+.nav-label { font-family: var(--mono); font-size: 9px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; padding: 0 6px; margin-bottom: 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 9px; padding: 7px 10px;
+  border-radius: var(--radius); cursor: pointer; color: var(--text2);
+  font-size: 12px; font-weight: 500; transition: background .12s, color .12s;
+  margin-bottom: 1px; user-select: none;
+}
+.nav-item:hover { background: var(--panel2); color: var(--text); }
+.nav-item.active { background: var(--panel2); color: var(--text); border-left: 2px solid var(--blue); padding-left: 8px; }
+.nav-ico { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
+.nav-count { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--text3); background: var(--panel2); padding: 1px 6px; border-radius: 3px; }
+.nav-count.warn { color: var(--yellow); background: var(--yellow-bg); }
+.nav-divider { height: 1px; background: var(--border2); margin: 8px 10px; }
+
+/* ─── MAIN ────────────────────────────────────────────────────── */
+main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+/* ─── SECTION SYSTEM ─────────────────────────────────────────── */
+.section { display: none; }
+.section.active { display: block; }
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; gap: 12px; flex-wrap: wrap; }
+.section-title { font-size: 16px; font-weight: 600; }
+
+/* ─── KPI STRIP ───────────────────────────────────────────────── */
+.kpi-strip { display: flex; gap: 1px; margin-bottom: 20px; background: var(--border); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+.kpi-item { flex: 1; background: var(--panel); padding: 14px 16px; }
+.kpi-val { font-family: var(--mono); font-size: 22px; font-weight: 500; color: var(--text); line-height: 1; }
+.kpi-label { font-size: 11px; color: var(--text2); margin-top: 4px; }
+
+/* ─── TOOLBAR ─────────────────────────────────────────────────── */
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.search-wrap { position: relative; flex: 1; min-width: 180px; }
+.search-wrap input { width: 100%; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px 8px 32px; border-radius: var(--radius); font-size: 13px; font-family: var(--font); outline: none; transition: border-color .15s; }
+.search-wrap input:focus { border-color: var(--blue); }
+.search-ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 13px; pointer-events: none; }
+.toolbar select {
+  background: var(--panel); border: 1px solid var(--border); color: var(--text2);
+  padding: 7px 10px; border-radius: var(--radius); font-size: 12px; font-family: var(--font);
+  outline: none; cursor: pointer; min-width: 120px;
+}
+.toolbar select:focus { border-color: var(--blue); }
+.btn-sm { background: var(--panel); border: 1px solid var(--border); color: var(--text2); padding: 7px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: border-color .15s, color .15s; display: flex; align-items: center; gap: 5px; }
+.btn-sm:hover { border-color: var(--text3); color: var(--text); }
+.btn-sm.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn-sm.primary:hover { opacity: .88; }
+.count-label { font-family: var(--mono); font-size: 11px; color: var(--text3); white-space: nowrap; margin-left: auto; }
+
+/* ─── TABLE ───────────────────────────────────────────────────── */
+.tbl-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+table { width: 100%; border-collapse: collapse; }
+thead { background: var(--panel2); }
+th {
+  padding: 9px 12px; text-align: left; font-family: var(--mono); font-size: 10px;
+  font-weight: 500; color: var(--text3); letter-spacing: .8px; text-transform: uppercase;
+  border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap;
+}
+th:hover { color: var(--text2); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border2); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.015); }
+
+/* ─── CELLS ───────────────────────────────────────────────────── */
+.cell-model { font-weight: 500; color: var(--text); }
+.cell-model small { display: block; color: var(--text2); font-size: 11px; font-weight: 400; margin-top: 2px; font-family: var(--mono); }
+.cell-amt { font-family: var(--mono); font-size: 11px; color: var(--text2); }
+.cell-local { font-size: 12px; color: var(--text2); }
+.cell-days { font-family: var(--mono); font-size: 11px; color: var(--text); }
+.cell-days span { display: block; font-size: 10px; color: var(--text3); }
+
+/* ─── BADGES ──────────────────────────────────────────────────── */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.b-green  { background: var(--green-bg);  color: var(--green); }
+.b-purple { background: rgba(139,92,246,.1); color: #a78bfa; }
+.b-yellow { background: var(--yellow-bg); color: var(--yellow); }
+.b-red    { background: var(--red-bg);    color: var(--red); }
+.b-muted  { background: var(--muted-bg);  color: var(--text3); }
+.b-blue   { background: var(--blue-bg);   color: var(--blue); }
+.b-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.tag-chip { font-family: var(--mono); font-size: 10px; background: var(--panel2); border: 1px solid var(--border); color: var(--text2); padding: 2px 7px; border-radius: 3px; }
+
+/* ─── ACTIONS ─────────────────────────────────────────────────── */
+.row-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+tr:hover .row-actions { opacity: 1; }
+.act-btn { background: none; border: 1px solid var(--border); color: var(--text3); padding: 4px 7px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: border-color .12s, color .12s; }
+.act-btn:hover { border-color: var(--blue); color: var(--blue); }
+.act-btn.del:hover { border-color: var(--red); color: var(--red); }
+
+/* ─── PAGINATION ──────────────────────────────────────────────── */
+.pager { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--border); }
+.pager-info { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+.pager-btns { display: flex; gap: 4px; }
+.pg-btn { background: none; border: 1px solid var(--border); color: var(--text2); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: border-color .12s, color .12s; }
+.pg-btn:hover, .pg-btn.active { border-color: var(--blue); color: var(--blue); }
+.pg-btn:disabled { opacity: .3; cursor: default; }
+
+/* ─── ALERT PANEL ─────────────────────────────────────────────── */
+.alert-strip { background: var(--panel); border: 1px solid rgba(234,179,8,.2); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 18px; }
+.alert-strip-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: var(--yellow); }
+.alert-list { display: flex; flex-direction: column; gap: 5px; max-height: 140px; overflow-y: auto; }
+.alert-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px; background: var(--panel2); border-radius: 4px; cursor: pointer; transition: background .1s; }
+.alert-row:hover { background: rgba(234,179,8,.06); }
+.alert-ico { font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+.alert-text h5 { font-size: 12px; font-weight: 500; color: var(--text); }
+.alert-text p { font-size: 11px; color: var(--text3); margin-top: 1px; }
+
+/* ─── MODAL ───────────────────────────────────────────────────── */
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; overflow-y: auto; padding: 32px 16px; backdrop-filter: blur(3px); }
+.overlay.open { display: flex; align-items: flex-start; justify-content: center; }
+.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 700px; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-title { font-size: 15px; font-weight: 600; }
+.modal-close { background: none; border: none; color: var(--text3); font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color .12s; }
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 20px; max-height: 70vh; overflow-y: auto; }
+.modal-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); }
+
+/* ─── FORM GRID ───────────────────────────────────────────────── */
+.fg { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+.fg.tri { grid-template-columns: 1fr 1fr 1fr; }
+.fg.solo { grid-template-columns: 1fr; }
+.fg.full { grid-column: 1 / -1; }
+.fi { display: flex; flex-direction: column; gap: 5px; }
+.fi label { font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: .6px; text-transform: uppercase; }
+.fi input, .fi select, .fi textarea {
+  background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 10px; border-radius: var(--radius); font-size: 13px;
+  font-family: var(--font); outline: none; transition: border-color .15s; width: 100%;
+}
+.fi input:focus, .fi select:focus, .fi textarea:focus { border-color: var(--blue); }
+.fi textarea { resize: vertical; min-height: 62px; }
+.fi.full { grid-column: 1 / -1; }
+.fsec { margin-top: 18px; }
+.fsec-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .8px; padding-bottom: 10px; border-bottom: 1px solid var(--border2); margin-bottom: 13px; }
+.fcheck { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.fcheck input[type=checkbox] { width: 14px; height: 14px; accent-color: var(--blue); cursor: pointer; }
+.fcheck label { font-size: 12px; color: var(--text2); cursor: pointer; }
+
+/* ─── DETAIL MODAL ────────────────────────────────────────────── */
+.dg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.di { background: var(--panel2); border-radius: 5px; padding: 10px 12px; }
+.di.full { grid-column: 1 / -1; }
+.di-key { font-family: var(--mono); font-size: 9px; color: var(--text3); letter-spacing: .8px; text-transform: uppercase; margin-bottom: 4px; }
+.di-val { font-size: 13px; color: var(--text); word-break: break-word; }
+.warranty-bar { border-radius: 5px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.warranty-bar.valid   { background: var(--green-bg); border: 1px solid rgba(34,197,94,.2); }
+.warranty-bar.expired { background: var(--red-bg);   border: 1px solid rgba(239,68,68,.2); }
+.warranty-bar.unknown { background: var(--muted-bg);  border: 1px solid var(--border); }
+.warranty-bar h4 { font-size: 12px; font-weight: 600; }
+.warranty-bar p  { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.attn-box { background: var(--yellow-bg); border: 1px solid rgba(234,179,8,.2); border-radius: 5px; padding: 10px 12px; margin-bottom: 14px; }
+.attn-box h4 { font-size: 11px; font-weight: 600; color: var(--yellow); margin-bottom: 6px; }
+.attn-box li { font-size: 11px; color: var(--text2); list-style: none; padding: 2px 0; }
+.attn-box li::before { content: '· '; color: var(--yellow); }
+.hist-entry { border-left: 2px solid var(--border); padding: 8px 12px; margin-bottom: 8px; }
+.hist-entry.rep  { border-left-color: var(--yellow); }
+.hist-entry.upg  { border-left-color: var(--blue); }
+.hist-type { font-family: var(--mono); font-size: 9px; letter-spacing: .8px; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
+.hist-row { display: flex; gap: 18px; flex-wrap: wrap; }
+.hist-field span { display: block; }
+.hist-field span:first-child { font-family: var(--mono); font-size: 9px; color: var(--text3); margin-bottom: 2px; }
+.hist-field span:last-child  { font-size: 12px; color: var(--text2); }
+.lifebar-wrap { display: flex; flex-direction: column; gap: 6px; }
+.lifebar-row { display: flex; align-items: center; gap: 10px; }
+.lifebar-lbl { font-size: 11px; color: var(--text2); width: 120px; flex-shrink: 0; }
+.lifebar { flex: 1; height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+.lifebar-fill { height: 100%; border-radius: 3px; background: var(--blue); transition: width .4s; }
+.lifebar-fill.warn  { background: var(--yellow); }
+.lifebar-fill.crit  { background: var(--red); }
+.lifebar-val { font-family: var(--mono); font-size: 11px; color: var(--text2); white-space: nowrap; }
+
+/* ─── USERS SECTION ───────────────────────────────────────────── */
+.user-card { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
+.user-card-info h4 { font-size: 13px; font-weight: 500; }
+.user-card-info p { font-size: 11px; color: var(--text3); margin-top: 2px; font-family: var(--mono); }
+.user-card-right { display: flex; align-items: center; gap: 10px; }
+.role-select { background: var(--panel2); border: 1px solid var(--border); color: var(--text2); padding: 5px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; outline: none; }
+
+/* ─── LOG TABLE ───────────────────────────────────────────────── */
+.log-action { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border-radius: 3px; }
+.log-insert { background: var(--green-bg);  color: var(--green); }
+.log-update { background: var(--blue-bg);   color: var(--blue); }
+.log-delete { background: var(--red-bg);    color: var(--red); }
+
+/* ─── LOADING ─────────────────────────────────────────────────── */
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-row td { text-align: center; padding: 40px; color: var(--text3); }
+
+/* ─── EMPTY ───────────────────────────────────────────────────── */
+.empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+.empty-state p { margin-top: 8px; font-size: 13px; }
+
+/* ─── TOAST ───────────────────────────────────────────────────── */
+.toast-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 400; display: flex; flex-direction: column; gap: 6px; }
+.toast { background: var(--panel); border: 1px solid var(--border); padding: 10px 14px; border-radius: var(--radius); font-size: 12px; display: flex; align-items: center; gap: 8px; min-width: 240px; box-shadow: 0 6px 20px rgba(0,0,0,.4); animation: tin .18s ease; }
+.toast.ok  { border-left: 3px solid var(--green); }
+.toast.err { border-left: 3px solid var(--red); }
+@keyframes tin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ─── SUPABASE CONFIG PANEL ───────────────────────────────────── */
+#configPanel { position: fixed; inset: 0; background: var(--bg); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.config-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 36px 40px; width: 100%; max-width: 480px; }
+.config-box h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+.config-box p { color: var(--text2); font-size: 12px; margin-bottom: 24px; line-height: 1.6; }
+.config-hint { font-family: var(--mono); font-size: 11px; color: var(--text3); padding: 10px; background: var(--panel2); border-radius: 5px; margin-bottom: 16px; line-height: 1.7; }
+
+@media (max-width: 860px) {
+  aside { display: none; }
+  .kpi-strip { flex-wrap: wrap; }
+  .kpi-item { min-width: 45%; }
+  .fg { grid-template-columns: 1fr; }
+  .fg.tri { grid-template-columns: 1fr 1fr; }
+  .dg { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ─── SUPABASE CONFIG ──────────────────────────────────────── -->
+<div id="configPanel">
+  <div class="config-box">
+    <h2>Configurar Supabase</h2>
+    <p>Informe as credenciais do seu projeto Supabase. Você encontra essas informações em <strong>Project Settings → API</strong>.</p>
+    <div class="config-hint">
+      📄 Execute o arquivo <strong>supabase_schema.sql</strong> no SQL Editor do Supabase antes de continuar.<br>
+      🔑 Após criar sua conta, rode: <code>UPDATE profiles SET role = 'admin' WHERE email = 'seu@email.com';</code>
+    </div>
+    <div class="form-row"><label>Project URL</label><input id="cfgUrl" placeholder="https://xxxx.supabase.co" value=""></div>
+    <div class="form-row"><label>Anon Public Key</label><input id="cfgKey" placeholder="eyJhbGciOiJIUzI1NiIs..." value=""></div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn-primary" onclick="saveConfig()" style="flex:1">Conectar</button>
+      <button class="btn-sm" onclick="useDemo()" style="flex:0;white-space:nowrap">Modo Demo</button>
+    </div>
+    <p style="margin-top:12px;font-size:11px;color:var(--text3)">No modo demo os dados ficam apenas no localStorage deste navegador.</p>
+  </div>
+</div>
+
+<!-- ─── AUTH ─────────────────────────────────────────────────── -->
+<div id="authScreen">
+  <div class="auth-box">
+    <div class="auth-logo">SIMF // GESTÃO DE ATIVOS</div>
+    <div class="auth-title">Acesso ao sistema</div>
+    <div class="auth-sub">Entre com sua conta para continuar</div>
+    <div class="auth-tabs">
+      <div class="auth-tab active" onclick="setAuthTab('login',this)">Entrar</div>
+      <div class="auth-tab" onclick="setAuthTab('register',this)">Cadastrar</div>
+    </div>
+    <div id="authError" class="auth-error"></div>
+    <div id="loginForm">
+      <div class="form-row"><label>E-mail</label><input type="email" id="loginEmail" placeholder="voce@empresa.com"></div>
+      <div class="form-row"><label>Senha</label><input type="password" id="loginPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn-primary" onclick="doLogin()">Entrar</button>
+    </div>
+    <div id="registerForm" style="display:none">
+      <div class="form-row"><label>Nome completo</label><input id="regName" placeholder="Seu nome"></div>
+      <div class="form-row"><label>E-mail</label><input type="email" id="regEmail" placeholder="voce@empresa.com"></div>
+      <div class="form-row"><label>Senha</label><input type="password" id="regPass" placeholder="Mínimo 6 caracteres"></div>
+      <button class="btn-primary" onclick="doRegister()">Criar conta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── APP ──────────────────────────────────────────────────── -->
+<div id="appScreen">
+  <header>
+    <div class="logo">SIMF <span class="logo-badge">v2</span></div>
+    <div class="header-right">
+      <div class="user-info">
+        <span id="userNameLabel">—</span>
+        <span class="role-pill" id="roleLabel">—</span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sair</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="nav-section">
+        <div class="nav-label">Visões</div>
+        <div class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard"><span class="nav-ico">▦</span> Dashboard <span class="nav-count" id="nc-total">—</span></div>
+        <div class="nav-item" onclick="nav('inventory')" id="nav-inventory"><span class="nav-ico">≡</span> Inventário</div>
+        <div class="nav-item" onclick="nav('alerts')" id="nav-alerts"><span class="nav-ico">⚑</span> Alertas <span class="nav-count warn" id="nc-alerts">—</span></div>
+        <div class="nav-item" onclick="nav('warranty')" id="nav-warranty"><span class="nav-ico">◎</span> Garantias</div>
+        <div class="nav-item" onclick="nav('lifetime')" id="nav-lifetime"><span class="nav-ico">◷</span> Vida Útil</div>
+      </div>
+      <div class="nav-divider"></div>
+      <div class="nav-section">
+        <div class="nav-label">Por Tag</div>
+        <div id="sidebarTags"></div>
+      </div>
+      <div class="nav-divider"></div>
+      <div class="nav-section">
+        <div class="nav-label">Por Local</div>
+        <div id="sidebarLocals" style="max-height:200px;overflow-y:auto"></div>
+      </div>
+      <div class="nav-divider"></div>
+      <div class="nav-section" id="adminNav" style="display:none">
+        <div class="nav-label">Administração</div>
+        <div class="nav-item" onclick="nav('users')" id="nav-users"><span class="nav-ico">⊙</span> Usuários</div>
+        <div class="nav-item" onclick="nav('logs')" id="nav-logs"><span class="nav-ico">◈</span> Logs</div>
+      </div>
+    </aside>
+
+    <main>
+
+      <!-- DASHBOARD -->
+      <div class="section active" id="sec-dashboard">
+        <div class="kpi-strip" id="kpiStrip"></div>
+        <div id="alertStripWrap"></div>
+
+        <div class="toolbar">
+          <div class="search-wrap"><span class="search-ico">⌕</span><input placeholder="Buscar equipamento, AMT, série, local…" id="sdSearch" oninput="renderDash()"></div>
+          <select id="sdTag" onchange="renderDash()"><option value="">Todas as tags</option></select>
+          <select id="sdLocal" onchange="renderDash()"><option value="">Todos os locais</option></select>
+          <select id="sdStatus" onchange="renderDash()">
+            <option value="">Todos</option>
+            <option value="Em Operação">Em Operação</option>
+            <option value="Em Estoque">Em Estoque</option>
+          </select>
+          <button class="btn-sm" onclick="exportCSV()">↓ CSV</button>
+          <button class="btn-sm" onclick="openImport()" id="btnImport">⬆ Importar</button>
+          <button class="btn-sm primary" onclick="openForm()" id="btnAddMain">+ Novo ativo</button>
+          <span class="count-label" id="sdCount"></span>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th onclick="sortBy('modelo')">Equipamento ↕</th>
+                <th onclick="sortBy('local')">Local ↕</th>
+                <th onclick="sortBy('status')">Status ↕</th>
+                <th>Garantia</th>
+                <th onclick="sortBy('vida_util_dias')">Vida Útil ↕</th>
+                <th onclick="sortBy('tempo_op_dias')">Tempo Op. ↕</th>
+                <th>Atenção</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="dashTbody"></tbody>
+          </table>
+          <div class="pager"><span class="pager-info" id="dashPInfo"></span><div class="pager-btns" id="dashPBtns"></div></div>
+        </div>
+      </div>
+
+      <!-- INVENTÁRIO -->
+      <div class="section" id="sec-inventory">
+        <div class="section-header">
+          <span class="section-title">Inventário Completo</span>
+        </div>
+        <div class="toolbar">
+          <div class="search-wrap"><span class="search-ico">⌕</span><input placeholder="Buscar…" id="invSearch" oninput="renderInv()"></div>
+          <select id="invTag" onchange="renderInv()"><option value="">Todas as tags</option></select>
+          <select id="invLocal" onchange="renderInv()"><option value="">Todos os locais</option></select>
+          <select id="invStatus" onchange="renderInv()"><option value="">Todos os status</option><option value="Em Operação">Em Operação</option><option value="Em Estoque">Em Estoque</option></select>
+          <select id="invWarranty" onchange="renderInv()"><option value="">Toda garantia</option><option value="Em garantia">Em garantia</option><option value="Expirada">Expirada</option><option value="N/A">Sem info</option></select>
+          <span class="count-label" id="invCount"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th onclick="sortBy('modelo')">Equipamento ↕</th>
+                <th onclick="sortBy('tag')">Tag ↕</th>
+                <th onclick="sortBy('marca')">Marca ↕</th>
+                <th onclick="sortBy('local')">Local ↕</th>
+                <th onclick="sortBy('status')">Status ↕</th>
+                <th>Recebido</th>
+                <th>Garantia</th>
+                <th onclick="sortBy('vida_util_dias')">Vida Útil ↕</th>
+                <th onclick="sortBy('tempo_op_dias')">Tempo Op. ↕</th>
+                <th>Utilizável</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="invTbody"></tbody>
+          </table>
+          <div class="pager"><span class="pager-info" id="invPInfo"></span><div class="pager-btns" id="invPBtns"></div></div>
+        </div>
+      </div>
+
+      <!-- ALERTAS -->
+      <div class="section" id="sec-alerts">
+        <div class="section-header"><span class="section-title">Central de Alertas</span></div>
+        <div id="alertsBody"></div>
+      </div>
+
+      <!-- GARANTIAS -->
+      <div class="section" id="sec-warranty">
+        <div class="section-header"><span class="section-title">Controle de Garantias</span></div>
+        <div class="toolbar">
+          <div class="search-wrap"><span class="search-ico">⌕</span><input placeholder="Buscar…" id="wSearch" oninput="renderWarranty()"></div>
+          <select id="wFilter" onchange="renderWarranty()"><option value="">Todas</option><option value="Em garantia">Em garantia</option><option value="Expirada">Expirada</option><option value="N/A">Sem informação</option></select>
+          <span class="count-label" id="wCount"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Equipamento</th><th>Local</th><th>Recebido</th>
+                <th>Garantia Original</th><th>Expira / Expirou</th>
+                <th>Retorno Reparo 1</th><th>Garant. Pós R1</th>
+                <th>Retorno Reparo 2</th><th>Garant. Pós R2</th>
+              </tr>
+            </thead>
+            <tbody id="wTbody"></tbody>
+          </table>
+          <div class="pager"><span class="pager-info" id="wPInfo"></span><div class="pager-btns" id="wPBtns"></div></div>
+        </div>
+      </div>
+
+      <!-- VIDA ÚTIL -->
+      <div class="section" id="sec-lifetime">
+        <div class="section-header"><span class="section-title">Vida Útil & Tempo de Operação</span></div>
+        <div class="toolbar">
+          <div class="search-wrap"><span class="search-ico">⌕</span><input placeholder="Buscar…" id="ltSearch" oninput="renderLifetime()"></div>
+          <select id="ltTag" onchange="renderLifetime()"><option value="">Todas as tags</option></select>
+          <span class="count-label" id="ltCount"></span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th onclick="sortBy('modelo')">Equipamento ↕</th>
+                <th onclick="sortBy('local')">Local ↕</th>
+                <th onclick="sortBy('recebido_em')">Recebido ↕</th>
+                <th onclick="sortBy('instalado_em')">Instalado ↕</th>
+                <th onclick="sortBy('vida_util_dias')">Vida Útil ↕</th>
+                <th onclick="sortBy('tempo_op_dias')">Tempo de Operação ↕</th>
+                <th>Indicadores</th>
+              </tr>
+            </thead>
+            <tbody id="ltTbody"></tbody>
+          </table>
+          <div class="pager"><span class="pager-info" id="ltPInfo"></span><div class="pager-btns" id="ltPBtns"></div></div>
+        </div>
+      </div>
+
+      <!-- USUÁRIOS (admin) -->
+      <div class="section" id="sec-users">
+        <div class="section-header"><span class="section-title">Gestão de Usuários</span></div>
+        <div id="usersBody"><div class="empty-state"><p>Carregando…</p></div></div>
+      </div>
+
+      <!-- LOGS (admin/editor) -->
+      <div class="section" id="sec-logs">
+        <div class="section-header"><span class="section-title">Log de Alterações</span></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>AMT</th><th>Detalhes</th></tr></thead>
+            <tbody id="logTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ─── FORM MODAL ────────────────────────────────────────────── -->
+<div class="overlay" id="formOverlay" onclick="overlayClick(event,'formOverlay')">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="formTitle">Novo Ativo</div>
+      <button class="modal-close" onclick="closeForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="fg">
+        <div class="fi"><label>Equipamento / Modelo *</label><input id="fModelo" placeholder="ex: Unidade Interrogadora OLA 2.1+"></div>
+        <div class="fi"><label>AMT *</label><input id="fAmt" placeholder="AMT-XXXXX"></div>
+        <div class="fi"><label>Tag *</label>
+          <select id="fTag">
+            <option value="IU">IU — Unidade Interrogadora</option>
+            <option value="PU">PU — Servidor</option>
+            <option value="CU">CU — Unidade de Controle</option>
+            <option value="ECPS">ECPS — Régua Gerenciável</option>
+            <option value="SW">SW — Switch</option>
+            <option value="GES">GES — Switch PoE</option>
+            <option value="VBIS">VBIS — Prateleira Ventilação</option>
+            <option value="TU">TU</option>
+            <option value="CO">CO</option>
+          </select>
+        </div>
+        <div class="fi"><label>Marca/Fabricante</label><input id="fMarca" placeholder="ex: OptaSense"></div>
+        <div class="fi"><label>ID Simplificado</label><input id="fIdSimpl" placeholder="ex: OLA 2.1+"></div>
+        <div class="fi"><label>Número de Série</label><input id="fSerie" placeholder="ex: 46-10594"></div>
+        <div class="fi"><label>Local</label>
+          <select id="fLocal">
+            <option value="">— Selecione —</option>
+            <option>ESTAP</option><option>TECAM</option><option>CCPD</option><option>ESMAN</option>
+            <option>REVAP</option><option>ESBC</option><option>REPLAN</option><option>Barra Mansa</option>
+            <option>São Brás do Suaçuí</option><option>Buriti Alegre</option><option>Uberlândia</option>
+            <option>Senador Canedo</option><option>Pirassununga</option><option>São Caetano do Sul</option>
+            <option>Guararema</option><option>Lorena</option><option>Ribeirão Preto</option>
+            <option>Santa Isabel</option><option>Uberaba</option><option>Barueri</option>
+          </select>
+        </div>
+        <div class="fi"><label>Status</label>
+          <select id="fStatus"><option value="Em Operação">Em Operação</option><option value="Em Estoque">Em Estoque</option></select>
+        </div>
+        <div class="fi"><label>Nota de Entrega (DN)</label><input id="fDn" placeholder="ex: DN 586"></div>
+        <div class="fi"><label>Recebido em</label><input type="date" id="fRecebido"></div>
+        <div class="fi"><label>Instalado em (última instalação)</label><input type="date" id="fInstalado"></div>
+        <div class="fi" style="padding-top:20px">
+          <div class="fcheck"><input type="checkbox" id="fUtil" checked><label for="fUtil">Utilizável</label></div>
+          <div class="fcheck"><input type="checkbox" id="fValidado"><label for="fValidado">Validado</label></div>
+        </div>
+      </div>
+
+      <div class="fsec">
+        <div class="fsec-title">Datas operacionais</div>
+        <div class="fg tri">
+          <div class="fi"><label>Operacional 1</label><input type="date" id="fOp1"></div>
+          <div class="fi"><label>Operacional 2</label><input type="date" id="fOp2"></div>
+          <div class="fi"><label>Operacional 3</label><input type="date" id="fOp3"></div>
+        </div>
+      </div>
+
+      <div class="fsec">
+        <div class="fsec-title">1ª Ocorrência de falha / serviço</div>
+        <div class="fg">
+          <div class="fi"><label>Data da falha</label><input type="date" id="fF1d"></div>
+          <div class="fi"><label>Motivo</label><input id="fF1m" placeholder="ex: Falha óptica"></div>
+          <div class="fi"><label>Tipo de serviço</label>
+            <select id="fF1t"><option value="">—</option><option>Reparo</option><option>Reparo/Upgrade</option><option>Upgrade</option></select>
+          </div>
+          <div class="fi"><label>Enviado (UK)</label><input type="date" id="fF1e"></div>
+          <div class="fi"><label>Retorno</label><input type="date" id="fF1r"></div>
+        </div>
+      </div>
+
+      <div class="fsec">
+        <div class="fsec-title">2ª Ocorrência de falha / serviço</div>
+        <div class="fg">
+          <div class="fi"><label>Data da falha</label><input type="date" id="fF2d"></div>
+          <div class="fi"><label>Motivo</label><input id="fF2m" placeholder="ex: Falha óptica"></div>
+          <div class="fi"><label>Tipo de serviço</label>
+            <select id="fF2t"><option value="">—</option><option>Reparo</option><option>Reparo/Upgrade</option><option>Upgrade</option></select>
+          </div>
+          <div class="fi"><label>Enviado (UK)</label><input type="date" id="fF2e"></div>
+          <div class="fi"><label>Retorno</label><input type="date" id="fF2r"></div>
+        </div>
+      </div>
+
+      <div class="fsec">
+        <div class="fsec-title">Observações</div>
+        <div class="fg solo"><div class="fi"><label>Notas</label><textarea id="fNotas" placeholder="Informações adicionais, tickets relacionados, alertas…"></textarea></div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.3)" id="btnDelForm" style="display:none" onclick="deleteAsset()">Excluir</button>
+      <button class="btn-sm" onclick="closeForm()">Cancelar</button>
+      <button class="btn-sm primary" onclick="saveAsset()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── DETAIL MODAL ──────────────────────────────────────────── -->
+<div class="overlay" id="detailOverlay" onclick="overlayClick(event,'detailOverlay')">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="detailTitle"></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:3px" id="detailSub"></div>
+      </div>
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-foot">
+      <button class="btn-sm" onclick="closeDetail()">Fechar</button>
+      <button class="btn-sm primary" id="detailEditBtn">Editar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── IMPORT MODAL ──────────────────────────────────────────── -->
+<div class="overlay" id="importOverlay" onclick="overlayClick(event,'importOverlay')">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div class="modal-title">Importar / Gerenciar Dados</div>
+      <button class="modal-close" onclick="closeImport()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- IMPORT FROM FILE -->
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Importar da planilha (.xlsx)</div>
+        <div style="background:var(--panel2);border:1px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;transition:border-color .15s" id="dropZone" onclick="document.getElementById('xlsxInput').click()" ondragover="event.preventDefault();this.style.borderColor='var(--blue)'" ondragleave="this.style.borderColor='var(--border)'" ondrop="handleDrop(event)">
+          <div style="font-size:24px;margin-bottom:8px">📂</div>
+          <div style="font-size:13px;color:var(--text)">Clique ou arraste um arquivo <strong>.xlsx</strong> aqui</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Formato: planilha "Inventário SIMF" com cabeçalho na linha 2</div>
+        </div>
+        <input type="file" id="xlsxInput" accept=".xlsx,.xls" style="display:none" onchange="handleXlsx(this)">
+        <div id="importPreview" style="display:none;margin-top:14px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="importPreviewLabel"></div>
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Modo de importação</div>
+          <div style="display:flex;flex-direction:column;gap:6px" id="importModes">
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color .15s" id="modeLabel0">
+              <input type="radio" name="importMode" value="fresh" checked style="margin-top:2px;accent-color:var(--blue)" onchange="highlightMode()">
+              <div><div style="font-size:13px;font-weight:500;color:var(--text)">Importar do zero</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Remove todos os ativos atuais e carrega somente os da planilha</div></div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color .15s" id="modeLabel1">
+              <input type="radio" name="importMode" value="append" style="margin-top:2px;accent-color:var(--blue)" onchange="highlightMode()">
+              <div><div style="font-size:13px;font-weight:500;color:var(--text)">Acrescentar novos</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Mantém os ativos existentes e adiciona apenas os novos (AMT não duplicado)</div></div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color .15s" id="modeLabel2">
+              <input type="radio" name="importMode" value="overwrite" style="margin-top:2px;accent-color:var(--blue)" onchange="highlightMode()">
+              <div><div style="font-size:13px;font-weight:500;color:var(--text)">Sobrescrever</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Ativos com mesmo AMT são atualizados; novos AMTs são adicionados; o resto é mantido</div></div>
+            </label>
+          </div>
+          <button class="btn-sm primary" style="margin-top:14px;width:100%;justify-content:center" onclick="doImport()">Confirmar Importação</button>
+        </div>
+      </div>
+
+      <!-- DIVIDER -->
+      <div style="height:1px;background:var(--border);margin:4px 0 20px"></div>
+
+      <!-- DANGER ZONE -->
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Zona de perigo</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.3)" onclick="confirmClear()">🗑 Limpar tudo</button>
+          <button class="btn-sm" onclick="exportJSON()">⬇ Exportar JSON (backup)</button>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sm" onclick="closeImport()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TOAST ─────────────────────────────────────────────────── -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG & SUPABASE
+// ═══════════════════════════════════════════════════════════
+const DEMO_MODE_KEY = 'simf_demo';
+const CFG_KEY       = 'simf_cfg';
+const LOCAL_KEY     = 'simf_assets';
+
+let sb = null;          // Supabase client
+let DEMO = false;       // demo mode flag
+let currentUser = null;
+let currentProfile = null;
+let assets = [];        // in-memory cache
+let editingId = null;
+let sortField = 'modelo';
+let sortAsc   = true;
+const PG = 25;
+let pages = { dashboard:1, inventory:1, warranty:1, lifetime:1, logs:1 };
+
+const TODAY = new Date();
+
+// ─── INIT ──────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const cfg = getSavedConfig();
+  if (cfg) {
+    initSupabase(cfg.url, cfg.key);
+  } else if (localStorage.getItem(DEMO_MODE_KEY)) {
+    startDemo();
+  }
+  // If no config, configPanel stays visible
+});
+
+function getSavedConfig() {
+  try { return JSON.parse(localStorage.getItem(CFG_KEY)); } catch { return null; }
+}
+
+function saveConfig() {
+  const url = document.getElementById('cfgUrl').value.trim();
+  const key = document.getElementById('cfgKey').value.trim();
+  if (!url || !key) { alert('Preencha URL e Key'); return; }
+  localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
+  initSupabase(url, key);
+}
+
+function initSupabase(url, key) {
+  try {
+    sb = supabase.createClient(url, key);
+    document.getElementById('configPanel').style.display = 'none';
+    listenAuth();
+  } catch(e) {
+    alert('Erro ao conectar: ' + e.message);
+  }
+}
+
+function listenAuth() {
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (session?.user) {
+      currentUser = session.user;
+      await loadProfile();
+      showApp();
+    } else {
+      currentUser = null;
+      currentProfile = null;
+      showAuth();
+    }
+  });
+}
+
+async function loadProfile() {
+  const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+  currentProfile = data;
+}
+
+function useDemo() {
+  localStorage.setItem(DEMO_MODE_KEY, '1');
+  document.getElementById('configPanel').style.display = 'none';
+  startDemo();
+}
+
+function startDemo() {
+  DEMO = true;
+  currentUser = { id: 'demo', email: 'demo@simf.local' };
+  currentProfile = { full_name: 'Demo User', role: 'admin', email: 'demo@simf.local' };
+  showApp();
+}
+
+// ═══════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════
+function showAuth() {
+  document.getElementById('authScreen').style.display = 'flex';
+  document.getElementById('appScreen').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+
+  const name = currentProfile?.full_name || currentUser?.email || 'Usuário';
+  const role = currentProfile?.role || 'viewer';
+  document.getElementById('userNameLabel').textContent = name;
+  const rl = document.getElementById('roleLabel');
+  rl.textContent = role;
+  rl.className = 'role-pill role-' + role;
+
+  const canWrite = ['admin','editor'].includes(role);
+  document.getElementById('btnAddMain').style.display = canWrite ? '' : 'none';
+  if (role === 'admin') document.getElementById('adminNav').style.display = 'block';
+
+  loadAssets();
+}
+
+function setAuthTab(tab, el) {
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('loginForm').style.display    = tab === 'login'    ? '' : 'none';
+  document.getElementById('registerForm').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('authError').style.display = 'none';
+}
+
+async function doLogin() {
+  if (DEMO) return;
+  const email = document.getElementById('loginEmail').value;
+  const pass  = document.getElementById('loginPass').value;
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error) showAuthError(error.message);
+}
+
+async function doRegister() {
+  if (DEMO) return;
+  const name  = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value;
+  const pass  = document.getElementById('regPass').value;
+  const { error } = await sb.auth.signUp({ email, password: pass, options: { data: { full_name: name } } });
+  if (error) showAuthError(error.message);
+  else showAuthError('Conta criada! Verifique seu e-mail para confirmar.');
+}
+
+async function doLogout() {
+  if (DEMO) { localStorage.removeItem(DEMO_MODE_KEY); location.reload(); return; }
+  await sb.auth.signOut();
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('authError');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════
+// DATA LAYER
+// ═══════════════════════════════════════════════════════════
+async function loadAssets() {
+  if (DEMO) {
+    assets = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]');
+    if (!assets.length) assets = getInitialData();
+    assets = assets.map(a => enrichAsset(a));
+    refresh();
+    return;
+  }
+  const { data, error } = await sb.from('assets_view').select('*').order('modelo');
+  if (error) { toast('Erro ao carregar dados: ' + error.message, 'err'); return; }
+  assets = (data || []).map(a => enrichAsset(a));
+  refresh();
+}
+
+function enrichAsset(a) {
+  // Compute vida_util and tempo_op if not from DB view
+  if (a.vida_util_dias === undefined) {
+    a.vida_util_dias = a.recebido_em ? diffDays(a.recebido_em, TODAY) : null;
+  }
+  if (a.tempo_op_dias === undefined) {
+    a.tempo_op_dias = a.instalado_em ? diffDays(a.instalado_em, TODAY) : null;
+  }
+  // Compute garantia_status if not from DB view
+  if (!a.garantia_status) {
+    const w = calcWarranty(a);
+    a.garantia_status  = w.status;
+    a.garantia_expira_em = w.expira;
+  }
+  return a;
+}
+
+function diffDays(dateStr, toDate) {
+  const from = new Date(dateStr);
+  const to   = toDate instanceof Date ? toDate : new Date(toDate);
+  return Math.floor((to - from) / 86400000);
+}
+
+function calcWarranty(a) {
+  if (a.falha2_retorno) {
+    const exp = addMonths(a.falha2_retorno, 3);
+    return { status: new Date(exp) >= TODAY ? 'Em garantia' : 'Expirada', expira: exp, tipo: 'pós-reparo 2', meses: 3 };
+  }
+  if (a.falha1_retorno) {
+    const exp = addMonths(a.falha1_retorno, 3);
+    return { status: new Date(exp) >= TODAY ? 'Em garantia' : 'Expirada', expira: exp, tipo: 'pós-reparo 1', meses: 3 };
+  }
+  if (a.recebido_em) {
+    const exp = addMonths(a.recebido_em, 18);
+    return { status: new Date(exp) >= TODAY ? 'Em garantia' : 'Expirada', expira: exp, tipo: 'original', meses: 18 };
+  }
+  return { status: 'N/A', expira: null, tipo: '', meses: 0 };
+}
+
+function addMonths(dateStr, n) {
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().split('T')[0];
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const p = d.split('T')[0].split('-');
+  return `${p[2]}/${p[1]}/${p[0]}`;
+}
+
+function fmtDays(n) {
+  if (n === null || n === undefined) return '—';
+  if (n < 0) return '< 0d';
+  if (n < 365) return `${n}d`;
+  const y = Math.floor(n / 365);
+  const m = Math.floor((n % 365) / 30);
+  return m > 0 ? `${y}a ${m}m` : `${y}a`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ALERTS & ATTENTION
+// ═══════════════════════════════════════════════════════════
+function getAlerts(a) {
+  const r = [];
+  if (!a.utilizavel) r.push({ sev: 'red', msg: 'Não utilizável / com defeito' });
+  if (a.notas && /teste necess/i.test(a.notas)) r.push({ sev: 'yellow', msg: 'Teste necessário antes de uso' });
+  if (a.falha2_data && !a.falha2_retorno) r.push({ sev: 'yellow', msg: `2ª falha sem retorno — ${a.falha2_motivo || '?'}` });
+  else if (a.falha1_data && !a.falha1_retorno && !a.falha2_data) r.push({ sev: 'yellow', msg: `Falha sem retorno — ${a.falha1_motivo || '?'}` });
+  if (a.garantia_status === 'Expirada') r.push({ sev: 'muted', msg: 'Garantia expirada' });
+  if (a.notas && /irá para/i.test(a.notas)) r.push({ sev: 'muted', msg: 'Transferência pendente' });
+  return r;
+}
+
+// ═══════════════════════════════════════════════════════════
+// WARRANTY BADGE
+// ═══════════════════════════════════════════════════════════
+function wBadge(a) {
+  if (a.garantia_status === 'Em garantia') return `<span class="badge b-green"><span class="b-dot"></span> Em garantia</span>`;
+  if (a.garantia_status === 'Expirada')    return `<span class="badge b-red"><span class="b-dot"></span> Expirada</span>`;
+  return `<span class="badge b-muted">N/A</span>`;
+}
+
+function statusBadge(s) {
+  return s === 'Em Operação'
+    ? `<span class="badge b-green"><span class="b-dot"></span> Em Operação</span>`
+    : `<span class="badge b-purple"><span class="b-dot"></span> Em Estoque</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// FILTER & SORT
+// ═══════════════════════════════════════════════════════════
+function getFiltered(ctx) {
+  let data = [...assets];
+
+  const qEl   = { dashboard:'sdSearch', inventory:'invSearch', warranty:'wSearch', lifetime:'ltSearch' };
+  const tagEl = { dashboard:'sdTag',    inventory:'invTag',    lifetime:'ltTag' };
+  const locEl = { dashboard:'sdLocal',  inventory:'invLocal' };
+  const stEl  = { dashboard:'sdStatus', inventory:'invStatus' };
+  const wEl   = { inventory:'invWarranty', warranty:'wFilter' };
+
+  const q = (document.getElementById(qEl[ctx])?.value || '').toLowerCase();
+  if (q) data = data.filter(a => [a.modelo, a.amt, a.marca, a.numero_serie, a.local, a.notas, a.tag].join(' ').toLowerCase().includes(q));
+
+  const tag = document.getElementById(tagEl[ctx])?.value;
+  if (tag) data = data.filter(a => a.tag === tag);
+
+  const loc = document.getElementById(locEl[ctx])?.value;
+  if (loc) data = data.filter(a => a.local === loc);
+
+  const st = document.getElementById(stEl[ctx])?.value;
+  if (st) data = data.filter(a => a.status === st);
+
+  const wf = document.getElementById(wEl[ctx])?.value;
+  if (wf) data = data.filter(a => {
+    if (wf === 'N/A')         return a.garantia_status === 'N/A';
+    if (wf === 'Em garantia') return a.garantia_status === 'Em garantia';
+    if (wf === 'Expirada')    return a.garantia_status === 'Expirada';
+    return true;
+  });
+
+  data.sort((a, b) => {
+    let va = a[sortField]; let vb = b[sortField];
+    if (va === null || va === undefined) va = sortAsc ? Infinity : -Infinity;
+    if (vb === null || vb === undefined) vb = sortAsc ? Infinity : -Infinity;
+    if (typeof va === 'number') return sortAsc ? va - vb : vb - va;
+    return sortAsc
+      ? String(va).localeCompare(String(vb))
+      : String(vb).localeCompare(String(va));
+  });
+
+  return data;
+}
+
+function sortBy(f) {
+  if (sortField === f) sortAsc = !sortAsc; else { sortField = f; sortAsc = true; }
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER HELPERS
+// ═══════════════════════════════════════════════════════════
+function paginate(data, ctx) {
+  const p  = pages[ctx] || 1;
+  const tot = data.length;
+  const s   = (p-1) * PG;
+  return { slice: data.slice(s, s + PG), total: tot, page: p };
+}
+
+function renderPager(infoId, btnsId, total, page, ctx) {
+  const tp = Math.ceil(total / PG);
+  const s  = (page-1)*PG+1, e = Math.min(page*PG, total);
+  const info = document.getElementById(infoId);
+  const btns = document.getElementById(btnsId);
+  if (info) info.textContent = total > 0 ? `${s}–${e} de ${total}` : '';
+  if (!btns) return;
+  btns.innerHTML = '';
+  const prev = mk('button', 'pg-btn', '←'); prev.disabled = page <= 1;
+  prev.onclick = () => { pages[ctx] = page-1; renderAll(); };
+  btns.appendChild(prev);
+  for (let p = Math.max(1,page-2); p <= Math.min(tp,page+2); p++) {
+    const b = mk('button', 'pg-btn' + (p===page?' active':''), String(p));
+    b.onclick = () => { pages[ctx] = p; renderAll(); };
+    btns.appendChild(b);
+  }
+  const next = mk('button', 'pg-btn', '→'); next.disabled = page >= tp;
+  next.onclick = () => { pages[ctx] = page+1; renderAll(); };
+  btns.appendChild(next);
+}
+
+function mk(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls)  el.className   = cls;
+  if (text) el.textContent = text;
+  return el;
+}
+
+function emptyRow(colspan, msg = 'Nenhum registro encontrado') {
+  return `<tr><td colspan="${colspan}"><div class="empty-state"><p>${msg}</p></div></td></tr>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER SECTIONS
+// ═══════════════════════════════════════════════════════════
+function renderDash() {
+  const data = getFiltered('dashboard');
+  const { slice, total, page } = paginate(data, 'dashboard');
+  const canWrite = ['admin','editor'].includes(currentProfile?.role);
+
+  document.getElementById('sdCount').textContent = `${total} ativo${total!==1?'s':''}`;
+  const tbody = document.getElementById('dashTbody');
+  if (!slice.length) { tbody.innerHTML = emptyRow(8); renderPager('dashPInfo','dashPBtns',0,1,'dashboard'); return; }
+
+  tbody.innerHTML = slice.map(a => {
+    const alts = getAlerts(a);
+    const attCell = alts.length
+      ? `<span style="font-size:11px;color:var(--yellow)">⚑ ${alts.length}</span>`
+      : `<span style="color:var(--text3);font-size:11px">—</span>`;
+    return `<tr>
+      <td>
+        <div class="cell-model">${a.modelo}
+          <small><span class="tag-chip">${a.tag}</span> ${a.amt}${a.numero_serie?' · '+a.numero_serie:''}</small>
+        </div>
+      </td>
+      <td class="cell-local">${a.local||'—'}</td>
+      <td>${statusBadge(a.status)}</td>
+      <td>${wBadge(a)}</td>
+      <td class="cell-days">${fmtDays(a.vida_util_dias)}<span>desde recebimento</span></td>
+      <td class="cell-days">${fmtDays(a.tempo_op_dias)}<span>desde instalação</span></td>
+      <td>${attCell}</td>
+      <td><div class="row-actions">
+        <button class="act-btn" onclick="showDetail('${a.id}')">↗</button>
+        ${canWrite ? `<button class="act-btn" onclick="openForm('${a.id}')">✎</button>` : ''}
+      </div></td>
+    </tr>`;
+  }).join('');
+  renderPager('dashPInfo','dashPBtns', total, page, 'dashboard');
+}
+
+function renderInv() {
+  const data = getFiltered('inventory');
+  const { slice, total, page } = paginate(data, 'inventory');
+  const canWrite = ['admin','editor'].includes(currentProfile?.role);
+
+  document.getElementById('invCount').textContent = `${total} ativo${total!==1?'s':''}`;
+  const tbody = document.getElementById('invTbody');
+  if (!slice.length) { tbody.innerHTML = emptyRow(11); renderPager('invPInfo','invPBtns',0,1,'inventory'); return; }
+
+  tbody.innerHTML = slice.map(a => `<tr>
+    <td>
+      <div class="cell-model">${a.modelo}
+        <small class="cell-amt">${a.amt}</small>
+      </div>
+    </td>
+    <td><span class="tag-chip">${a.tag}</span></td>
+    <td style="color:var(--text2);font-size:12px">${a.marca||'—'}</td>
+    <td class="cell-local">${a.local||'—'}</td>
+    <td>${statusBadge(a.status)}</td>
+    <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${fmtDate(a.recebido_em)}</td>
+    <td>${wBadge(a)}</td>
+    <td class="cell-days">${fmtDays(a.vida_util_dias)}</td>
+    <td class="cell-days">${fmtDays(a.tempo_op_dias)}</td>
+    <td>${a.utilizavel ? `<span style="color:var(--green);font-size:12px">✓</span>` : `<span style="color:var(--red);font-size:12px">✕</span>`}</td>
+    <td><div class="row-actions">
+      <button class="act-btn" onclick="showDetail('${a.id}')">↗</button>
+      ${canWrite ? `<button class="act-btn" onclick="openForm('${a.id}')">✎</button><button class="act-btn del" onclick="confirmDel('${a.id}')">✕</button>` : ''}
+    </div></td>
+  </tr>`).join('');
+  renderPager('invPInfo','invPBtns', total, page, 'inventory');
+}
+
+function renderWarranty() {
+  const data = getFiltered('warranty');
+  const { slice, total, page } = paginate(data, 'warranty');
+  document.getElementById('wCount').textContent = `${total} ativo${total!==1?'s':''}`;
+  const tbody = document.getElementById('wTbody');
+  if (!slice.length) { tbody.innerHTML = emptyRow(9); renderPager('wPInfo','wPBtns',0,1,'warranty'); return; }
+
+  const wbSmall = (baseDate, months) => {
+    if (!baseDate) return `<span class="badge b-muted">N/A</span>`;
+    const exp = addMonths(baseDate, months);
+    return new Date(exp) >= TODAY
+      ? `<span class="badge b-green"><span class="b-dot"></span> Ativa</span>`
+      : `<span class="badge b-red"><span class="b-dot"></span> Expirada</span>`;
+  };
+  const expDate = (baseDate, months) => {
+    if (!baseDate) return '—';
+    return fmtDate(addMonths(baseDate, months));
+  };
+
+  tbody.innerHTML = slice.map(a => `<tr>
+    <td>
+      <div class="cell-model">${a.modelo}<small class="cell-amt">${a.amt}</small></div>
+    </td>
+    <td class="cell-local">${a.local||'—'}</td>
+    <td style="font-family:var(--mono);font-size:11px">${fmtDate(a.recebido_em)}</td>
+    <td>${wbSmall(a.recebido_em, 18)}</td>
+    <td style="font-family:var(--mono);font-size:11px">${expDate(a.recebido_em,18)}</td>
+    <td style="font-family:var(--mono);font-size:11px">${fmtDate(a.falha1_retorno)}</td>
+    <td>${wbSmall(a.falha1_retorno, 3)}</td>
+    <td style="font-family:var(--mono);font-size:11px">${fmtDate(a.falha2_retorno)}</td>
+    <td>${wbSmall(a.falha2_retorno, 3)}</td>
+  </tr>`).join('');
+  renderPager('wPInfo','wPBtns', total, page, 'warranty');
+}
+
+function renderLifetime() {
+  const data = getFiltered('lifetime');
+  const { slice, total, page } = paginate(data, 'lifetime');
+  document.getElementById('ltCount').textContent = `${total} ativo${total!==1?'s':''}`;
+  const tbody = document.getElementById('ltTbody');
+  if (!slice.length) { tbody.innerHTML = emptyRow(7); renderPager('ltPInfo','ltPBtns',0,1,'lifetime'); return; }
+
+  // Max values for relative bars
+  const maxVU = Math.max(...data.map(a => a.vida_util_dias||0), 1);
+  const maxTO = Math.max(...data.map(a => a.tempo_op_dias||0), 1);
+
+  tbody.innerHTML = slice.map(a => {
+    const vuPct = a.vida_util_dias ? Math.min((a.vida_util_dias / maxVU)*100, 100) : 0;
+    const toPct = a.tempo_op_dias  ? Math.min((a.tempo_op_dias  / maxTO)*100, 100) : 0;
+    const vuCls = vuPct > 90 ? 'crit' : vuPct > 70 ? 'warn' : '';
+    const toCls = toPct > 90 ? 'crit' : toPct > 70 ? 'warn' : '';
+    return `<tr>
+      <td>
+        <div class="cell-model">${a.modelo}
+          <small><span class="tag-chip">${a.tag}</span> ${a.amt}</small>
+        </div>
+      </td>
+      <td class="cell-local">${a.local||'—'}</td>
+      <td style="font-family:var(--mono);font-size:11px">${fmtDate(a.recebido_em)}</td>
+      <td style="font-family:var(--mono);font-size:11px">${fmtDate(a.instalado_em)}</td>
+      <td class="cell-days">${fmtDays(a.vida_util_dias)}<span>${a.recebido_em ? fmtDate(a.recebido_em) + ' → hoje' : '—'}</span></td>
+      <td class="cell-days">${fmtDays(a.tempo_op_dias)}<span>${a.instalado_em ? fmtDate(a.instalado_em) + ' → hoje' : '—'}</span></td>
+      <td style="min-width:140px">
+        <div class="lifebar-wrap">
+          <div class="lifebar-row">
+            <div class="lifebar-lbl">Vida útil</div>
+            <div class="lifebar"><div class="lifebar-fill ${vuCls}" style="width:${vuPct}%"></div></div>
+            <div class="lifebar-val">${fmtDays(a.vida_util_dias)}</div>
+          </div>
+          <div class="lifebar-row">
+            <div class="lifebar-lbl">Em operação</div>
+            <div class="lifebar"><div class="lifebar-fill ${toCls}" style="width:${toPct}%"></div></div>
+            <div class="lifebar-val">${fmtDays(a.tempo_op_dias)}</div>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  renderPager('ltPInfo','ltPBtns', total, page, 'lifetime');
+}
+
+function renderAlertsFull() {
+  const arr = assets.filter(a => getAlerts(a).length > 0);
+  const body = document.getElementById('alertsBody');
+  if (!arr.length) { body.innerHTML = `<div class="empty-state"><p style="color:var(--green)">✓ Nenhum alerta ativo</p></div>`; return; }
+  body.innerHTML = arr.map(a => {
+    const alts = getAlerts(a);
+    return `<div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div>
+          <div class="cell-model">${a.modelo}<small class="cell-amt">${a.amt} · ${a.local||'—'}</small></div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${statusBadge(a.status)} ${wBadge(a)}
+          <button class="act-btn" onclick="openForm('${a.id}')">✎ Editar</button>
+        </div>
+      </div>
+      ${alts.map(al => `<div style="font-size:12px;padding:6px 10px;border-radius:4px;margin-bottom:4px;background:var(--panel2);color:${al.sev==='red'?'var(--red)':al.sev==='yellow'?'var(--yellow)':'var(--text3)'}">
+        ${al.sev==='red'?'●':al.sev==='yellow'?'◆':'○'} ${al.msg}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+function renderAlertStrip() {
+  const arr = assets.filter(a => getAlerts(a).length > 0);
+  document.getElementById('nc-alerts').textContent = arr.length;
+  const wrap = document.getElementById('alertStripWrap');
+  if (!arr.length) { wrap.innerHTML = ''; return; }
+  const top = arr.slice(0, 5);
+  wrap.innerHTML = `<div class="alert-strip">
+    <div class="alert-strip-header">⚑ ${arr.length} item${arr.length!==1?'s':''} com alertas</div>
+    <div class="alert-list">${top.map(a => {
+      const al = getAlerts(a)[0];
+      return `<div class="alert-row" onclick="showDetail('${a.id}')">
+        <div class="alert-ico">${al.sev==='red'?'●':'◆'}</div>
+        <div class="alert-text"><h5>${a.modelo}</h5><p>${al.msg} · ${a.local||'—'}</p></div>
+      </div>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function renderKPIs() {
+  const tot = assets.length;
+  const op  = assets.filter(a => a.status === 'Em Operação').length;
+  const stk = assets.filter(a => a.status === 'Em Estoque').length;
+  const gok = assets.filter(a => a.garantia_status === 'Em garantia').length;
+  const alt = assets.filter(a => getAlerts(a).length > 0).length;
+  document.getElementById('nc-total').textContent = tot;
+  document.getElementById('kpiStrip').innerHTML = [
+    ['Total',         tot,                 ''],
+    ['Em Operação',   op,                  `${tot?((op/tot)*100).toFixed(0):0}% do total`],
+    ['Em Estoque',    stk,                 `${tot?((stk/tot)*100).toFixed(0):0}% do total`],
+    ['Em Garantia',   gok,                 `${tot-gok} sem garantia ativa`],
+    ['Com Alertas',   alt,                 'requerem atenção'],
+  ].map(([lbl,val,sub]) => `<div class="kpi-item"><div class="kpi-val">${val}</div><div class="kpi-label">${lbl}${sub?`<br><span style="color:var(--text3);font-size:10px">${sub}</span>`:''}</div></div>`).join('');
+}
+
+function buildSidebarFilters() {
+  const tags   = [...new Set(assets.map(a => a.tag))].filter(Boolean).sort();
+  const locais = [...new Set(assets.map(a => a.local))].filter(Boolean).sort();
+
+  ['sdTag','invTag','ltTag'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">Todas as tags</option>` + tags.map(t => `<option value="${t}">${t}</option>`).join('');
+    el.value = cur;
+  });
+  ['sdLocal','invLocal'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">Todos os locais</option>` + locais.map(l => `<option value="${l}">${l}</option>`).join('');
+    el.value = cur;
+  });
+
+  document.getElementById('sidebarTags').innerHTML = tags.map(t => {
+    const n = assets.filter(a => a.tag === t).length;
+    return `<div class="nav-item" onclick="quickFilter('tag','${t}')">
+      <span class="nav-ico" style="font-family:var(--mono);font-size:10px">${t}</span>
+      <span class="nav-count">${n}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('sidebarLocals').innerHTML = locais.map(l => {
+    const n = assets.filter(a => a.local === l).length;
+    return `<div class="nav-item" style="font-size:11px" onclick="quickFilter('local','${l}')">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l}</span>
+      <span class="nav-count">${n}</span>
+    </div>`;
+  }).join('');
+}
+
+function quickFilter(type, val) {
+  nav('dashboard');
+  if (type === 'tag')   { document.getElementById('sdTag').value   = val; }
+  if (type === 'local') { document.getElementById('sdLocal').value = val; }
+  renderDash();
+}
+
+// ═══════════════════════════════════════════════════════════
+// USERS SECTION
+// ═══════════════════════════════════════════════════════════
+async function renderUsers() {
+  if (DEMO || currentProfile?.role !== 'admin') {
+    document.getElementById('usersBody').innerHTML = `<div class="empty-state"><p>Requer permissão de admin</p></div>`;
+    return;
+  }
+  const { data } = await sb.from('profiles').select('*').order('full_name');
+  const body = document.getElementById('usersBody');
+  if (!data?.length) { body.innerHTML = `<div class="empty-state"><p>Sem usuários</p></div>`; return; }
+  body.innerHTML = data.map(u => `
+    <div class="user-card">
+      <div class="user-card-info">
+        <h4>${u.full_name || u.email}</h4>
+        <p>${u.email}</p>
+      </div>
+      <div class="user-card-right">
+        <span class="role-pill role-${u.role}">${u.role}</span>
+        <select class="role-select" onchange="updateRole('${u.id}',this.value)">
+          <option value="admin"  ${u.role==='admin' ?'selected':''}>admin</option>
+          <option value="editor" ${u.role==='editor'?'selected':''}>editor</option>
+          <option value="viewer" ${u.role==='viewer'?'selected':''}>viewer</option>
+        </select>
+      </div>
+    </div>`).join('');
+}
+
+async function updateRole(uid, role) {
+  if (DEMO) { toast('Indisponível no modo demo', 'err'); return; }
+  const { error } = await sb.from('profiles').update({ role }).eq('id', uid);
+  if (error) toast('Erro: ' + error.message, 'err');
+  else toast('Papel atualizado', 'ok');
+}
+
+// ═══════════════════════════════════════════════════════════
+// LOGS
+// ═══════════════════════════════════════════════════════════
+async function renderLogs() {
+  const tbody = document.getElementById('logTbody');
+  if (DEMO) { tbody.innerHTML = emptyRow(5, 'Logs indisponíveis no modo demo'); return; }
+  const { data } = await sb.from('asset_logs')
+    .select('*, profiles(full_name, email), assets(amt, modelo)')
+    .order('changed_at', { ascending: false }).limit(200);
+  if (!data?.length) { tbody.innerHTML = emptyRow(5, 'Sem registros'); return; }
+  tbody.innerHTML = data.map(l => `<tr>
+    <td style="font-family:var(--mono);font-size:11px;white-space:nowrap">${new Date(l.changed_at).toLocaleString('pt-BR')}</td>
+    <td style="font-size:12px">${l.profiles?.full_name || l.profiles?.email || '—'}</td>
+    <td><span class="log-action log-${l.action.toLowerCase()}">${l.action}</span></td>
+    <td class="cell-amt">${l.assets?.amt || '—'}</td>
+    <td style="font-size:11px;color:var(--text3)">${l.assets?.modelo || '—'}</td>
+  </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════
+function nav(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item[id^="nav-"]').forEach(n => n.classList.remove('active'));
+  document.getElementById('sec-' + name)?.classList.add('active');
+  document.getElementById('nav-' + name)?.classList.add('active');
+  if (name === 'alerts')   renderAlertsFull();
+  if (name === 'inventory') renderInv();
+  if (name === 'warranty')  renderWarranty();
+  if (name === 'lifetime')  renderLifetime();
+  if (name === 'users')     renderUsers();
+  if (name === 'logs')      renderLogs();
+}
+
+function refresh() {
+  renderKPIs();
+  buildSidebarFilters();
+  renderAlertStrip();
+  renderDash();
+}
+
+function renderAll() {
+  renderDash();
+  renderInv();
+  renderWarranty();
+  renderLifetime();
+}
+
+// ═══════════════════════════════════════════════════════════
+// FORM OPEN / CLOSE
+// ═══════════════════════════════════════════════════════════
+function openForm(id = null) {
+  const canWrite = ['admin','editor'].includes(currentProfile?.role);
+  if (!canWrite) return;
+
+  editingId = id;
+  const btnDel = document.getElementById('btnDelForm');
+  btnDel.style.display = id && currentProfile?.role === 'admin' ? 'inline-flex' : 'none';
+
+  if (id) {
+    const a = assets.find(x => String(x.id) === String(id));
+    if (!a) return;
+    document.getElementById('formTitle').textContent = 'Editar: ' + a.modelo;
+    setF('fModelo', a.modelo); setF('fAmt', a.amt);
+    setF('fTag', a.tag);       setF('fMarca', a.marca||'');
+    setF('fIdSimpl', a.id_simpl||''); setF('fSerie', a.numero_serie||'');
+    setF('fLocal', a.local||'');      setF('fStatus', a.status||'Em Operação');
+    setF('fDn', a.dn||'');
+    setF('fRecebido', a.recebido_em||''); setF('fInstalado', a.instalado_em||'');
+    document.getElementById('fUtil').checked    = a.utilizavel !== false;
+    document.getElementById('fValidado').checked = a.validado === true;
+    setF('fOp1', a.op1||''); setF('fOp2', a.op2||''); setF('fOp3', a.op3||'');
+    setF('fF1d', a.falha1_data||'');    setF('fF1m', a.falha1_motivo||'');
+    setF('fF1t', a.falha1_tipo||'');    setF('fF1e', a.falha1_enviado||'');
+    setF('fF1r', a.falha1_retorno||'');
+    setF('fF2d', a.falha2_data||'');    setF('fF2m', a.falha2_motivo||'');
+    setF('fF2t', a.falha2_tipo||'');    setF('fF2e', a.falha2_enviado||'');
+    setF('fF2r', a.falha2_retorno||'');
+    setF('fNotas', a.notas||'');
+  } else {
+    document.getElementById('formTitle').textContent = 'Novo Ativo';
+    ['fModelo','fAmt','fMarca','fIdSimpl','fSerie','fDn','fRecebido','fInstalado',
+     'fOp1','fOp2','fOp3','fF1d','fF1m','fF1e','fF1r','fF2d','fF2m','fF2e','fF2r','fNotas']
+      .forEach(id => setF(id, ''));
+    setF('fTag','IU'); setF('fLocal',''); setF('fStatus','Em Operação');
+    setF('fF1t',''); setF('fF2t','');
+    document.getElementById('fUtil').checked = true;
+    document.getElementById('fValidado').checked = false;
+  }
+  document.getElementById('formOverlay').classList.add('open');
+}
+
+function closeForm()   { document.getElementById('formOverlay').classList.remove('open'); }
+function closeDetail() { document.getElementById('detailOverlay').classList.remove('open'); }
+function overlayClick(e, id) { if (e.target === document.getElementById(id)) document.getElementById(id).classList.remove('open'); }
+
+function setF(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
+function gF(id)        { return (document.getElementById(id)?.value || '').trim(); }
+
+// ═══════════════════════════════════════════════════════════
+// SAVE / DELETE
+// ═══════════════════════════════════════════════════════════
+async function saveAsset() {
+  const modelo = gF('fModelo'); const amt = gF('fAmt');
+  if (!modelo || !amt) { toast('Preencha Equipamento e AMT', 'err'); return; }
+
+  const obj = {
+    amt, tag: gF('fTag'), marca: gF('fMarca'), modelo, id_simpl: gF('fIdSimpl'),
+    numero_serie: gF('fSerie'), local: gF('fLocal') || null, status: gF('fStatus'),
+    dn: gF('fDn') || null,
+    recebido_em:  gF('fRecebido')  || null,
+    instalado_em: gF('fInstalado') || null,
+    utilizavel: document.getElementById('fUtil').checked,
+    validado:   document.getElementById('fValidado').checked,
+    op1: gF('fOp1')||null, op2: gF('fOp2')||null, op3: gF('fOp3')||null,
+    falha1_data: gF('fF1d')||null, falha1_motivo: gF('fF1m')||null,
+    falha1_tipo: gF('fF1t')||null, falha1_enviado: gF('fF1e')||null, falha1_retorno: gF('fF1r')||null,
+    falha2_data: gF('fF2d')||null, falha2_motivo: gF('fF2m')||null,
+    falha2_tipo: gF('fF2t')||null, falha2_enviado: gF('fF2e')||null, falha2_retorno: gF('fF2r')||null,
+    notas: gF('fNotas') || null,
+  };
+
+  if (DEMO) {
+    if (editingId) {
+      const idx = assets.findIndex(a => String(a.id) === String(editingId));
+      if (idx >= 0) assets[idx] = enrichAsset({ ...assets[idx], ...obj });
+    } else {
+      obj.id = 'demo_' + Date.now();
+      assets.push(enrichAsset(obj));
+    }
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(assets));
+    closeForm(); refresh(); toast('Salvo (modo demo)', 'ok'); return;
+  }
+
+  obj.updated_by = currentUser.id;
+  let error;
+  if (editingId) {
+    ({ error } = await sb.from('assets').update(obj).eq('id', editingId));
+  } else {
+    obj.created_by = currentUser.id;
+    ({ error } = await sb.from('assets').insert(obj));
+  }
+  if (error) { toast('Erro: ' + error.message, 'err'); return; }
+  closeForm();
+  await loadAssets();
+  toast(editingId ? 'Ativo atualizado' : 'Ativo criado', 'ok');
+}
+
+async function confirmDel(id) {
+  if (!confirm('Excluir este ativo? Esta ação não pode ser desfeita.')) return;
+  if (DEMO) {
+    assets = assets.filter(a => String(a.id) !== String(id));
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(assets));
+    refresh(); toast('Excluído (modo demo)', 'ok'); return;
+  }
+  const { error } = await sb.from('assets').delete().eq('id', id);
+  if (error) toast('Erro: ' + error.message, 'err');
+  else { await loadAssets(); toast('Ativo excluído', 'ok'); }
+}
+
+function deleteAsset() { if (editingId) confirmDel(editingId); closeForm(); }
+
+// ═══════════════════════════════════════════════════════════
+// DETAIL
+// ═══════════════════════════════════════════════════════════
+function showDetail(id) {
+  const a = assets.find(x => String(x.id) === String(id));
+  if (!a) return;
+  const w = { status: a.garantia_status, expira: a.garantia_expira_em, tipo: '', meses: 0 };
+  const alts = getAlerts(a);
+  const canWrite = ['admin','editor'].includes(currentProfile?.role);
+  document.getElementById('detailEditBtn').style.display = canWrite ? '' : 'none';
+  document.getElementById('detailEditBtn').onclick = () => { closeDetail(); openForm(id); };
+
+  document.getElementById('detailTitle').textContent = a.modelo;
+  document.getElementById('detailSub').textContent   = `${a.tag} · ${a.amt}${a.marca?' · '+a.marca:''}`;
+
+  let wBar = '';
+  if (w.status === 'Em garantia') wBar = `<div class="warranty-bar valid"><div><h4 style="color:var(--green)">🛡 Em Garantia</h4><p>Expira em ${fmtDate(a.garantia_expira_em)}</p></div></div>`;
+  else if (w.status === 'Expirada') wBar = `<div class="warranty-bar expired"><div><h4 style="color:var(--red)">⚠ Garantia Expirada</h4><p>Expirou em ${fmtDate(a.garantia_expira_em)}</p></div></div>`;
+  else wBar = `<div class="warranty-bar unknown"><div><h4>Sem informação de garantia</h4><p>Data de recebimento não registrada</p></div></div>`;
+
+  let attnHtml = '';
+  if (alts.length) attnHtml = `<div class="attn-box"><h4>⚑ Pontos de Atenção</h4><ul>${alts.map(al=>`<li>${al.msg}</li>`).join('')}</ul></div>`;
+
+  // Lifetime bars
+  const maxVU = Math.max(...assets.map(x=>x.vida_util_dias||0), 1);
+  const maxTO = Math.max(...assets.map(x=>x.tempo_op_dias||0), 1);
+  const vuPct = a.vida_util_dias ? Math.min((a.vida_util_dias/maxVU)*100,100) : 0;
+  const toPct = a.tempo_op_dias  ? Math.min((a.tempo_op_dias /maxTO)*100,100) : 0;
+  const lifetimeHtml = `
+    <div class="di full">
+      <div class="di-key">Vida Útil & Tempo de Operação</div>
+      <div class="lifebar-wrap" style="margin-top:8px">
+        <div class="lifebar-row">
+          <div class="lifebar-lbl">Vida útil total</div>
+          <div class="lifebar"><div class="lifebar-fill ${vuPct>90?'crit':vuPct>70?'warn':''}" style="width:${vuPct}%"></div></div>
+          <div class="lifebar-val">${fmtDays(a.vida_util_dias)} <span style="color:var(--text3);font-size:10px">(desde ${fmtDate(a.recebido_em)})</span></div>
+        </div>
+        <div class="lifebar-row" style="margin-top:8px">
+          <div class="lifebar-lbl">Em operação</div>
+          <div class="lifebar"><div class="lifebar-fill ${toPct>90?'crit':toPct>70?'warn':''}" style="width:${toPct}%"></div></div>
+          <div class="lifebar-val">${fmtDays(a.tempo_op_dias)} <span style="color:var(--text3);font-size:10px">(desde ${fmtDate(a.instalado_em)})</span></div>
+        </div>
+      </div>
+    </div>`;
+
+  let failHtml = '';
+  if (a.falha1_data || a.falha1_tipo) {
+    const cls = a.falha1_tipo?.includes('Reparo') ? 'rep' : 'upg';
+    failHtml += `<div class="hist-entry ${cls}">
+      <div class="hist-type" style="color:var(--yellow)">1ª Ocorrência · ${a.falha1_tipo||'—'}</div>
+      <div class="hist-row">
+        ${a.falha1_data    ? `<div class="hist-field"><span>Data</span><span>${fmtDate(a.falha1_data)}</span></div>` : ''}
+        ${a.falha1_motivo  ? `<div class="hist-field"><span>Motivo</span><span>${a.falha1_motivo}</span></div>` : ''}
+        ${a.falha1_enviado ? `<div class="hist-field"><span>Enviado</span><span>${fmtDate(a.falha1_enviado)}</span></div>` : ''}
+        ${a.falha1_retorno ? `<div class="hist-field"><span>Retorno</span><span>${fmtDate(a.falha1_retorno)}</span></div>` : ''}
+      </div>
+    </div>`;
+  }
+  if (a.falha2_data || a.falha2_tipo) {
+    const cls = a.falha2_tipo?.includes('Reparo') ? 'rep' : 'upg';
+    failHtml += `<div class="hist-entry ${cls}">
+      <div class="hist-type" style="color:var(--red)">2ª Ocorrência · ${a.falha2_tipo||'—'}</div>
+      <div class="hist-row">
+        ${a.falha2_data    ? `<div class="hist-field"><span>Data</span><span>${fmtDate(a.falha2_data)}</span></div>` : ''}
+        ${a.falha2_motivo  ? `<div class="hist-field"><span>Motivo</span><span>${a.falha2_motivo}</span></div>` : ''}
+        ${a.falha2_enviado ? `<div class="hist-field"><span>Enviado</span><span>${fmtDate(a.falha2_enviado)}</span></div>` : ''}
+        ${a.falha2_retorno ? `<div class="hist-field"><span>Retorno</span><span>${fmtDate(a.falha2_retorno)}</span></div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('detailBody').innerHTML = `
+    ${wBar}${attnHtml}
+    <div class="dg">
+      <div class="di"><div class="di-key">AMT</div><div class="di-val" style="font-family:var(--mono)">${a.amt}</div></div>
+      <div class="di"><div class="di-key">Número de Série</div><div class="di-val" style="font-family:var(--mono)">${a.numero_serie||'—'}</div></div>
+      <div class="di"><div class="di-key">Local</div><div class="di-val">${a.local||'—'}</div></div>
+      <div class="di"><div class="di-key">Status</div><div class="di-val">${statusBadge(a.status)}</div></div>
+      <div class="di"><div class="di-key">Recebido em</div><div class="di-val">${fmtDate(a.recebido_em)}</div></div>
+      <div class="di"><div class="di-key">Instalado em</div><div class="di-val">${fmtDate(a.instalado_em)}</div></div>
+      <div class="di"><div class="di-key">Nota de Entrega</div><div class="di-val">${a.dn||'—'}</div></div>
+      <div class="di"><div class="di-key">Utilizável</div><div class="di-val">${a.utilizavel?`<span style="color:var(--green)">✓ Sim</span>`:`<span style="color:var(--red)">✕ Não</span>`}</div></div>
+      ${lifetimeHtml}
+      ${a.op1||a.op2||a.op3 ? `<div class="di full"><div class="di-key">Datas Operacionais</div><div class="di-val" style="font-family:var(--mono);font-size:12px;display:flex;gap:16px;flex-wrap:wrap">${[a.op1&&'Op1: '+fmtDate(a.op1), a.op2&&'Op2: '+fmtDate(a.op2), a.op3&&'Op3: '+fmtDate(a.op3)].filter(Boolean).join(' · ')}</div></div>` : ''}
+    </div>
+    ${failHtml ? `<div style="margin-top:16px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Histórico de Serviços</div>${failHtml}</div>` : ''}
+    ${a.notas ? `<div style="margin-top:14px"><div class="di"><div class="di-key">Notas</div><div class="di-val" style="white-space:pre-wrap;line-height:1.6;font-size:12px">${a.notas}</div></div></div>` : ''}
+    <div style="margin-top:10px;font-size:11px;color:var(--text3)">${a.validado?`<span style="color:var(--green)">✓ Validado</span>`:`<span>Não validado</span>`}</div>`;
+
+  document.getElementById('detailOverlay').classList.add('open');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════
+function exportCSV() {
+  const data = getFiltered('dashboard');
+  const cols = ['modelo','amt','tag','marca','numero_serie','local','status','recebido_em','instalado_em','vida_util_dias','tempo_op_dias','garantia_status','utilizavel','dn','notas'];
+  const rows = [cols.join(';'), ...data.map(a => cols.map(c => `"${String(a[c]??'').replace(/"/g,'""')}"`).join(';'))];
+  const blob = new Blob(['\uFEFF'+rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a'); link.href = url;
+  link.download = `SIMF_${new Date().toISOString().split('T')[0]}.csv`;
+  link.click(); URL.revokeObjectURL(url);
+  toast('CSV exportado', 'ok');
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════
+function toast(msg, type = 'ok') {
+  const c = document.getElementById('toastWrap');
+  const d = document.createElement('div');
+  d.className = `toast ${type}`;
+  d.innerHTML = `<span style="color:${type==='ok'?'var(--green)':'var(--red)'}">${type==='ok'?'✓':'✕'}</span> ${msg}`;
+  c.appendChild(d);
+  setTimeout(() => d.remove(), 3200);
+}
+
+// ═══════════════════════════════════════════════════════════
+// INITIAL DEMO DATA
+// ═══════════════════════════════════════════════════════════
+function getInitialData() {
+  return [{"id":"1","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10922","numero_serie":"46-10594","utilizavel":true,"local":"ESTAP","status":"Em Operação","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":null,"op1":"2025-09-26","op2":null,"op3":"2025-09-26","falha1_data":null,"falha1_motivo":null,"falha1_tipo":"Upgrade","falha1_enviado":"2023-10-01","falha1_retorno":"2024-03-01","falha2_data":"2024-09-27","falha2_motivo":"Falha de temperatura","falha2_tipo":"Reparo","falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-04 (Ticket Zendesk #4169, unidade apresentou falha em 27/09/24 e era utilizada no OPS-11)","validado":true},{"id":"2","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10916","numero_serie":"46-10587","utilizavel":true,"local":"TECAM","status":"Em Operação","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":"2023-11-30","op1":null,"op2":null,"op3":null,"falha1_data":"2025-02-14","falha1_motivo":"Falha óptica","falha1_tipo":"Reparo/Upgrade","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-02 (Pós reparo/upgrade Reino Unido) [Única unidade 2.1 que apresentou defeito] Tratado no ticket #4504","validado":true},{"id":"3","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10507","numero_serie":"46-10645","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":"Upgrade","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD. (Pós upgrade Reino Unido) Recebido em 26/02/26","validado":true},{"id":"4","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10905","numero_serie":"46-10544","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":"Upgrade","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD. (Pós upgrade Reino Unido) Recebido em 26/02/26","validado":true},{"id":"5","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-13292","numero_serie":"46-10601","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":"Upgrade","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD. (Pós upgrade Reino Unido) Recebido em 26/02/26","validado":true},{"id":"6","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10912","numero_serie":"46-10583","utilizavel":true,"local":"TECAM","status":"Em Operação","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":null,"op1":"2018-11-23","op2":null,"op3":"2026-02-26","falha1_data":null,"falha1_motivo":null,"falha1_tipo":"Upgrade","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-01 (Pós upgrade Reino Unido)","validado":true},{"id":"7","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10910","numero_serie":"46-10580","utilizavel":true,"local":"ESMAN","status":"Em Operação","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":"2021-05-21","op1":"2021-10-29","op2":null,"op3":null,"falha1_data":"2025-09-07","falha1_motivo":"Falha de rede","falha1_tipo":"Reparo/Upgrade","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-09","validado":true},{"id":"8","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10481","numero_serie":"46-10619","utilizavel":true,"local":"REVAP","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":"2019-12-21","op1":null,"op2":null,"op3":null,"falha1_data":"2023-10-06","falha1_motivo":"Falha óptica","falha1_tipo":"Reparo","falha1_enviado":"2023-10-31","falha1_retorno":"2024-03-04","falha2_data":"2024-11-17","falha2_motivo":"Falha óptica","falha2_tipo":"Reparo","falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-29 (Unidade já apresentou defeito previamente tratado no ticket Zendesk #3954 em 17/11/24)","validado":true},{"id":"9","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18030","numero_serie":"85-10137","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-06-16","op1":null,"op2":null,"op3":null,"falha1_data":"2025-06-20","falha1_motivo":"Falha óptica","falha1_tipo":"Reparo","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD (Apresentou defeito em Buriti Alegre) Irá para REPLAN em 10/04/26","validado":true},{"id":"10","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18031","numero_serie":"85-10141","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-02-17","op1":"29/10/2021","op2":"18/08/2023","op3":"19/02/2025","falha1_data":"2025-06-20","falha1_motivo":"Falha óptica","falha1_tipo":"Reparo","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD (Apresentou defeito em Uberlândia) Irá para REPLAN em 10/04/26","validado":true},{"id":"11","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18037","numero_serie":"85-10147","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-04-09","op1":null,"op2":null,"op3":null,"falha1_data":"2025-06-20","falha1_motivo":"Falha óptica","falha1_tipo":"Reparo","falha1_enviado":"2025-11-03","falha1_retorno":"2026-02-26","falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD (Apresentou defeito em Senador Canedo)","validado":true},{"id":"12","marca":"SuperMicro","tag":"PU","modelo":"Servidor SuperMicro CSE-813M","id_simpl":null,"qtd":1,"amt":"AMT-00427","numero_serie":"C813MLH48NG0017","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor armazenado no CCPD-Sede.","validado":true},{"id":"13","marca":"OptaSense","tag":"VBIS","modelo":"VBIS","id_simpl":null,"qtd":1,"amt":"AMT-04724","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Prateleira de ventilação armazenada no CCPD-Sede.","validado":true},{"id":"14","marca":"SuperMicro","tag":"PU","modelo":"Servidor SuperMicro CSE-813M","id_simpl":null,"qtd":1,"amt":"AMT-07263","numero_serie":"C813MLE39NA0086","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor armazenado no CCPD-Sede.","validado":true},{"id":"15","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7440 All-In-One","id_simpl":null,"qtd":1,"amt":"AMT-07266","numero_serie":"GZYX3G2","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"16","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-07601","numero_serie":"CG03150400151","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede. (TESTE Necessário)","validado":true},{"id":"17","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-07927","numero_serie":"CG03170500017","utilizavel":true,"local":"ESBC","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua gerenciável em operação na ESBC (OPS-34).","validado":true},{"id":"18","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-07927","numero_serie":null,"utilizavel":true,"local":"Barra Mansa","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua gerenciável em operação em Barra Mansa (OPS-05 e OPS-06).","validado":true},{"id":"19","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-08303","numero_serie":"CG03171100012","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede. (TESTE Necessário)","validado":true},{"id":"20","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18033","numero_serie":"85-10143","utilizavel":true,"local":"Barra Mansa","status":"Em Operação","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-06-10","op1":"09/07/2024","op2":"2024-07-09","op3":"14/07/2025","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-05 e OPS-06","validado":true},{"id":"21","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18035","numero_serie":"85-10145","utilizavel":true,"local":"São Brás do Suaçuí","status":"Em Operação","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-07-14","op1":"11/08/2025","op2":"2023-12-30","op3":"11/08/2025","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-07 e OPS-08","validado":true},{"id":"22","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7460 All-In-One","id_simpl":null,"qtd":1,"amt":"AMT-10870","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"23","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7460 All-In-One","id_simpl":null,"qtd":1,"amt":"AMT-10874","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"24","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7480 All-In-One","id_simpl":null,"qtd":1,"amt":"AMT-10877","numero_serie":null,"utilizavel":false,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede, sem ventoinha e memória.","validado":true},{"id":"25","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18036","numero_serie":"85-10146","utilizavel":true,"local":"Buriti Alegre","status":"Em Operação","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-08-21","op1":"29/08/2023","op2":"29/08/2023","op3":"25/06/2025","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-30 e OPS-31 (Unidade apresentou falha tratada no ticket #5024 porém voltou a funcionar após ciclo de energia)","validado":true},{"id":"26","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18032","numero_serie":"85-10142","utilizavel":true,"local":"Uberlândia","status":"Em Operação","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-07-09","op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-35 e OPS-36","validado":true},{"id":"27","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18038","numero_serie":"85-10148","utilizavel":true,"local":"REPLAN","status":"Em Operação","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-05-06","op1":"29/10/2021","op2":null,"op3":"22/05/2025","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-37 e OPS-38","validado":true},{"id":"28","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora ATLAS","id_simpl":"ATLAS","qtd":1,"amt":"AMT-18034","numero_serie":"85-10144","utilizavel":true,"local":"Senador Canedo","status":"Em Operação","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":"2025-08-21","op1":"15/05/2025","op2":null,"op3":"15/05/2025","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-39 e OPS-40","validado":true},{"id":"29","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-07802","numero_serie":"46-10102","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":"2017-01-01","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD (previamente utilizada no OPS-01)","validado":true},{"id":"30","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10972","numero_serie":"46-10563","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":"2017-01-01","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD (previamente utilizada no OPS-02)","validado":true},{"id":"31","marca":"OptaSense","tag":"VBIS","modelo":"VBIS","id_simpl":null,"qtd":1,"amt":"AMT-11372","numero_serie":null,"utilizavel":true,"local":"ESTAP","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":"2023-12-05","op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Prateleira de ventilação em operação na ESTAP (OPS-04).","validado":true},{"id":"32","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7480 All-In-One","id_simpl":null,"qtd":1,"amt":"AMT-11878","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":"2025-09-26","op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"33","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-12551","numero_serie":"CG03201000101","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":"2024-07-09","op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede. Encontrada no armário superior esquerdo próximo ao videowall. (Teste Necessário)","validado":true},{"id":"34","marca":"SuperMicro","tag":"PU","modelo":"Servidor SuperMicro","id_simpl":null,"qtd":1,"amt":"AMT-12646","numero_serie":"C8150LJ46NV0753","utilizavel":true,"local":"ESTAP","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em operação na ESTAP (OPS-04).","validado":true},{"id":"35","marca":"SuperMicro","tag":"PU","modelo":"Servidor SuperMicro","id_simpl":null,"qtd":1,"amt":"AMT-12648","numero_serie":"C8150LJ46NV0739","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque no CCPD-Sede.","validado":true},{"id":"36","marca":"OptaSense","tag":"VBIS","modelo":"VBIS","id_simpl":null,"qtd":1,"amt":"AMT-12860","numero_serie":null,"utilizavel":false,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Prateleira com defeito em uma das ventoinhas armazenada no CCPD-Sede.","validado":true},{"id":"37","marca":"OptaSense","tag":"VBIS","modelo":"VBIS","id_simpl":null,"qtd":1,"amt":"AMT-12929","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Prateleira de ventilação armazenada no CCPD-Sede.","validado":true},{"id":"38","marca":"OptaSense","tag":"VBIS","modelo":"VBIS","id_simpl":null,"qtd":1,"amt":"AMT-12952","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Prateleira de ventilação armazenada no CCPD-Sede.","validado":true},{"id":"39","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10917","numero_serie":"46-10588","utilizavel":true,"local":"ESTAP","status":"Em Operação","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":null,"op1":"2023-12-05","op2":"2023-12-05","op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-03","validado":true},{"id":"40","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10976","numero_serie":"46-10564","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":"2017-01-01","instalado_em":null,"op1":"2025-10-30","op2":null,"op3":"2025-10-30","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade armazenada no CCPD (Previamente utilizada no OPS-09)","validado":true},{"id":"41","marca":"SuperMicro","tag":"PU","modelo":"Servidor SuperMicro","id_simpl":null,"qtd":1,"amt":"AMT-13381","numero_serie":"CLA15AK03A20113","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque no CCPD-Sede.","validado":true},{"id":"42","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-13885","numero_serie":"CG03210800023","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"43","marca":"SuperMicro","tag":"PU","modelo":"Servidor SuperMicro CSE-815-7","id_simpl":null,"qtd":1,"amt":"AMT-14303","numero_serie":"C815FLK28P70073","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor armazenado no CCPD-Sede. (Anteriormente em SBS)","validado":true},{"id":"44","marca":"OptaSense","tag":"VBIS","modelo":"VBIS","id_simpl":null,"qtd":1,"amt":"AMT-14512","numero_serie":null,"utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Prateleira de ventilação armazenada no CCPD-Sede. (Anteriormente em SBS)","validado":true},{"id":"45","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7410 All-in-One","id_simpl":null,"qtd":1,"amt":"AMT-16378","numero_serie":"2RFQWT3","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"46","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7410 All-in-One","id_simpl":null,"qtd":1,"amt":"AMT-16382","numero_serie":"4RFQWT3","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"47","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7410 All-in-One","id_simpl":null,"qtd":1,"amt":"AMT-16387","numero_serie":"DQFQWT3","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"48","marca":"Dell","tag":"CU","modelo":"Unidade de Controle Optiplex 7410 All-in-One","id_simpl":null,"qtd":1,"amt":"AMT-16388","numero_serie":"JB8QWT3","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade de Controle armazenada no CCPD-Sede.","validado":true},{"id":"49","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17307","numero_serie":"CG03230300067","utilizavel":true,"local":"ESTAP","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua gerenciável em operação na ESTAP (OPS-04).","validado":true},{"id":"50","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17308","numero_serie":"CG03230300049","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"51","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17324","numero_serie":"CG03230300051","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"52","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17328","numero_serie":"CG03230300053","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"53","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17337","numero_serie":"CG03230300105","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"54","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17338","numero_serie":"CG03230300108","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"55","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17340","numero_serie":"CG03230300194","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"56","marca":"Lindy","tag":"ECPS","modelo":"ECPS","id_simpl":null,"qtd":1,"amt":"AMT-17342","numero_serie":"CG03230300077","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Régua armazenada no CCPD-Sede.","validado":true},{"id":"57","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17646","numero_serie":"S232L51003662","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"58","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17646","numero_serie":"S232L51003662","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"59","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17648","numero_serie":"S232L51004106","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"60","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17648","numero_serie":"S232L51004106","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"61","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17650","numero_serie":"S232L51003876","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"62","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17650","numero_serie":"S232L51003876","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"63","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17651","numero_serie":"S232L51003934","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"64","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17652","numero_serie":"S232L51003434","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"65","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17652","numero_serie":"S232L51003434","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"66","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17653","numero_serie":"S232L51004198","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"67","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17653","numero_serie":"S232L51004198","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"68","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17654","numero_serie":"S232L51004125","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"69","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17655","numero_serie":"S232L51004022","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"70","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17656","numero_serie":"S232L51003897","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"71","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17656","numero_serie":"S232L51003897","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"72","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17657","numero_serie":"S232L51003491","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"73","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17658","numero_serie":"S232L51003783","utilizavel":true,"local":"ESTAP","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch em operação na ESTAP (OPS-04).","validado":true},{"id":"74","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17658","numero_serie":"S232L51003783","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"75","marca":"Zyxel","tag":"SW","modelo":"GS1900-24HP","id_simpl":null,"qtd":1,"amt":"AMT-17662","numero_serie":"S232L51003568","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Switch armazenado no CCPD-Sede.","validado":true},{"id":"76","marca":"Zyxel","tag":"GES","modelo":"Switch Gerenciável com PoE 24 portas","id_simpl":null,"qtd":1,"amt":"AMT-17662","numero_serie":"S232L51003568","utilizavel":true,"local":null,"status":"Em Estoque","dn":"DN 979","recebido_em":"2024-12-09","instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":null,"validado":true},{"id":"77","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17956","numero_serie":"22136","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque no CCPD-Sede.","validado":true},{"id":"78","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17957","numero_serie":"22137","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque no CCPD-Sede.","validado":true},{"id":"79","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17958","numero_serie":"22138","utilizavel":true,"local":"Barra Mansa","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em operação na ETEL Barra Mansa.","validado":true},{"id":"80","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17959","numero_serie":"22139","utilizavel":true,"local":"São Brás do Suaçuí","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em operação na ETEL São Brás do Suaçuí. APS 07.","validado":true},{"id":"81","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17960","numero_serie":"22140","utilizavel":true,"local":"REPLAN","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque na REPLAN.","validado":true},{"id":"82","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17961","numero_serie":"22141","utilizavel":true,"local":"REPLAN","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque na REPLAN.","validado":true},{"id":"83","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17962","numero_serie":"22142","utilizavel":true,"local":"REPLAN","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque na REPLAN.","validado":true},{"id":"84","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17963","numero_serie":"22143","utilizavel":true,"local":"Uberlândia","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor instalado na ETEL UBL (APS-35).","validado":true},{"id":"85","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17964","numero_serie":"22144","utilizavel":true,"local":"CCPD","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque no CCPD-Sede.","validado":true},{"id":"86","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17965","numero_serie":"22145","utilizavel":true,"local":"REPLAN","status":"Em Operação","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor instalado na ETEL REPLAN (APS-37).","validado":true},{"id":"87","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17966","numero_serie":"22146","utilizavel":true,"local":"REPLAN","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque na REPLAN.","validado":true},{"id":"88","marca":"SuperMicro","tag":"PU","modelo":"Atlas Processing Server (APS)","id_simpl":null,"qtd":1,"amt":"AMT-17967","numero_serie":"22147","utilizavel":true,"local":"REPLAN","status":"Em Estoque","dn":null,"recebido_em":null,"instalado_em":null,"op1":null,"op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Servidor em estoque na REPLAN.","validado":true},{"id":"89","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10008","numero_serie":"46-10507","utilizavel":true,"local":"ESMAN","status":"Em Operação","dn":"DN 586","recebido_em":"2021-06-01","instalado_em":null,"op1":"2025-11-26","op2":null,"op3":"2025-11-26","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-10","validado":true},{"id":"90","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-13293","numero_serie":"46-10926","utilizavel":true,"local":"REVAP","status":"Em Operação","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":"2025-10-30","op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-21","validado":true},{"id":"91","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10482","numero_serie":"46-10620","utilizavel":true,"local":"Lorena","status":"Em Operação","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":"2022-08-19","op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-26","validado":true},{"id":"92","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10909","numero_serie":"46-10550","utilizavel":true,"local":"REVAP","status":"Em Operação","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":"2022-08-19","op2":null,"op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-28","validado":true},{"id":"93","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1","id_simpl":"OLA 2.1","qtd":1,"amt":"AMT-10510","numero_serie":"46-10648","utilizavel":true,"local":"Barueri","status":"Em Operação","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":"2023-09-27","op2":"2023-09-27","op3":"2025-04-08","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-32","validado":true},{"id":"94","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10915","numero_serie":"46-10586","utilizavel":true,"local":"REPLAN","status":"Em Operação","dn":"DN 650","recebido_em":"2022-04-22","instalado_em":null,"op1":"2019-12-21","op2":"2024-04-19","op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-11 (Recebida como OLA 2.1 e virou 2.1+)","validado":true},{"id":"95","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10485","numero_serie":"46-10623","utilizavel":true,"local":"Guararema","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2019-12-21","op2":"2024-05-21","op3":"2025-03-11","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-15","validado":true},{"id":"96","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10491","numero_serie":"46-10629","utilizavel":true,"local":"Pirassununga","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2020-09-20","op2":"2024-05-31","op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-16","validado":true},{"id":"97","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10487","numero_serie":"46-10625","utilizavel":true,"local":"Ribeirão Preto","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2021-10-29","op2":"2023-08-30","op3":null,"falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-19","validado":true},{"id":"98","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10483","numero_serie":"46-10621","utilizavel":true,"local":"Santa Isabel","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2021-10-29","op2":null,"op3":"2025-07-02","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-22","validado":true},{"id":"99","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10015","numero_serie":"46-10517","utilizavel":true,"local":"Ribeirão Preto","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2022-08-19","op2":null,"op3":"2025-07-15","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-23","validado":true},{"id":"100","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10490","numero_serie":"46-10628","utilizavel":true,"local":"Uberaba","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2022-08-19","op2":"2023-08-25","op3":"2025-02-18","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-24","validado":true},{"id":"101","marca":"OptaSense","tag":"IU","modelo":"Unidade Interrogadora OLA 2.1+","id_simpl":"OLA 2.1+","qtd":1,"amt":"AMT-10488","numero_serie":"46-10626","utilizavel":true,"local":"Lorena","status":"Em Operação","dn":"DN 808","recebido_em":"2023-06-15","instalado_em":null,"op1":"2022-08-19","op2":"2024-05-14","op3":"2025-02-24","falha1_data":null,"falha1_motivo":null,"falha1_tipo":null,"falha1_enviado":null,"falha1_retorno":null,"falha2_data":null,"falha2_motivo":null,"falha2_tipo":null,"falha2_enviado":null,"falha2_retorno":null,"notas":"Unidade sendo utilizada no OPS-27","validado":true}];
+}
+
+// ═══════════════════════════════════════════════════════════
+// IMPORT / EXPORT / CLEAR
+// ═══════════════════════════════════════════════════════════
+let pendingImportData = [];
+
+function openImport() {
+  document.getElementById('importOverlay').classList.add('open');
+  document.getElementById('importPreview').style.display = 'none';
+  document.getElementById('xlsxInput').value = '';
+  pendingImportData = [];
+}
+function closeImport() { document.getElementById('importOverlay').classList.remove('open'); }
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').style.borderColor = 'var(--border)';
+  const file = e.dataTransfer.files[0];
+  if (file) parseXlsx(file);
+}
+function handleXlsx(input) {
+  const file = input.files[0];
+  if (file) parseXlsx(file);
+}
+
+function parseXlsx(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      // Use SheetJS if available, otherwise parse as CSV-like structure
+      if (typeof XLSX !== 'undefined') {
+        parseWithSheetJS(e.target.result);
+      } else {
+        // Dynamically load SheetJS
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        script.onload = () => parseWithSheetJS(e.target.result);
+        script.onerror = () => toast('Erro ao carregar parser XLSX. Tente exportar como CSV primeiro.', 'err');
+        document.head.appendChild(script);
+        // Store for after load
+        window._pendingXlsx = e.target.result;
+      }
+    } catch(err) {
+      toast('Erro ao ler arquivo: ' + err.message, 'err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWithSheetJS(arrayBuffer) {
+  try {
+    const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+    // Try sheet named "Inventário SIMF" first, else first sheet
+    const sheetName = wb.SheetNames.find(n => n.includes('Invent')) || wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    // Read with header row at index 1 (row 2)
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
+    
+    // Find header row (row with 'ID' or 'AMT')
+    let hdrIdx = 1;
+    for (let i = 0; i < Math.min(5, rows.length); i++) {
+      if (rows[i] && (rows[i].includes('AMT') || rows[i].includes('ID'))) { hdrIdx = i; break; }
+    }
+    const headers = rows[hdrIdx];
+    
+    const colMap = {
+      amt:            headers.findIndex(h => h === 'AMT'),
+      marca:          headers.findIndex(h => String(h).includes('Marca') || String(h).includes('Fabricante')),
+      tag:            headers.findIndex(h => h === 'Tag'),
+      modelo:         headers.findIndex(h => String(h).includes('Modelo') || String(h).includes('Descrição')),
+      id_simpl:       headers.findIndex(h => String(h).includes('Simpl')),
+      numero_serie:   headers.findIndex(h => String(h).includes('Série') || String(h).includes('Serie')),
+      utilizavel:     headers.findIndex(h => String(h).includes('Utilizável') || String(h).includes('Utilizavel')),
+      local:          headers.findIndex(h => h === 'Local'),
+      status:         headers.findIndex(h => h === 'Status'),
+      dn:             headers.findIndex(h => String(h).includes('DN') || String(h).includes('Nota de Entrega')),
+      recebido_em:    headers.findIndex(h => String(h).includes('Recebido')),
+      instalado_em:   headers.findIndex(h => String(h).includes('Instalado')),
+      op1:            headers.findIndex(h => h === 'Operacional 1'),
+      op2:            headers.findIndex(h => h === 'Operacional 2'),
+      op3:            headers.findIndex(h => h === 'Operacional 3'),
+      falha1_data:    headers.findIndex(h => String(h).includes('1 - Data da falha')),
+      falha1_motivo:  headers.findIndex(h => String(h).includes('1 - Motivo')),
+      falha1_tipo:    headers.findIndex(h => String(h).includes('1 - Tipo')),
+      falha1_enviado: headers.findIndex(h => String(h).includes('1 - Enviado')),
+      falha1_retorno: headers.findIndex(h => String(h).includes('1 - Retorno')),
+      falha2_data:    headers.findIndex(h => String(h).includes('2 - Data da falha')),
+      falha2_motivo:  headers.findIndex(h => String(h).includes('2 - Motivo')),
+      falha2_tipo:    headers.findIndex(h => String(h).includes('2 - Tipo')),
+      falha2_enviado: headers.findIndex(h => String(h).includes('2 - Enviado')),
+      falha2_retorno: headers.findIndex(h => String(h).includes('2 - Retorno')),
+      notas:          headers.findIndex(h => h === 'Notas'),
+      validado:       headers.findIndex(h => h === 'Validação' || h === 'Validacao'),
+    };
+
+    const g = (row, col) => {
+      if (col < 0 || col >= row.length) return null;
+      const v = row[col];
+      if (v === null || v === undefined || v === '') return null;
+      const s = String(v).trim();
+      if (s === '' || s === 'NaT' || s === 'nan' || s === 'None') return null;
+      return s;
+    };
+    const gDate = (row, col) => {
+      const v = g(row, col);
+      if (!v) return null;
+      // Try to parse date
+      const d = new Date(v);
+      if (!isNaN(d)) return d.toISOString().split('T')[0];
+      // Try dd/mm/yyyy
+      const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+      return null;
+    };
+    const gBool = (row, col, def = true) => {
+      const v = g(row, col);
+      if (v === null) return def;
+      if (v === 'TRUE' || v === '1' || v === 'true' || v === 'VERDADEIRO') return true;
+      if (v === 'FALSE' || v === '0' || v === 'false' || v === 'FALSO') return false;
+      return def;
+    };
+
+    const parsed = [];
+    for (let i = hdrIdx + 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row.length) continue;
+      const amt = g(row, colMap.amt);
+      if (!amt || amt === 'NaT' || colMap.amt < 0) continue;
+      const modelo = g(row, colMap.modelo);
+      if (!modelo) continue;
+      parsed.push({
+        id: String(Date.now()) + '_' + i,
+        amt, marca: g(row, colMap.marca), tag: g(row, colMap.tag) || 'IU',
+        modelo, id_simpl: g(row, colMap.id_simpl), qtd: 1,
+        numero_serie: g(row, colMap.numero_serie),
+        utilizavel: gBool(row, colMap.utilizavel, true),
+        local: g(row, colMap.local), status: g(row, colMap.status) || 'Em Estoque',
+        dn: g(row, colMap.dn),
+        recebido_em: gDate(row, colMap.recebido_em),
+        instalado_em: gDate(row, colMap.instalado_em),
+        op1: gDate(row, colMap.op1), op2: gDate(row, colMap.op2), op3: gDate(row, colMap.op3),
+        falha1_data: gDate(row, colMap.falha1_data), falha1_motivo: g(row, colMap.falha1_motivo),
+        falha1_tipo: g(row, colMap.falha1_tipo), falha1_enviado: gDate(row, colMap.falha1_enviado),
+        falha1_retorno: gDate(row, colMap.falha1_retorno),
+        falha2_data: gDate(row, colMap.falha2_data), falha2_motivo: g(row, colMap.falha2_motivo),
+        falha2_tipo: g(row, colMap.falha2_tipo), falha2_enviado: gDate(row, colMap.falha2_enviado),
+        falha2_retorno: gDate(row, colMap.falha2_retorno),
+        notas: g(row, colMap.notas),
+        validado: gBool(row, colMap.validado, false),
+      });
+    }
+
+    pendingImportData = parsed;
+    const preview = document.getElementById('importPreview');
+    document.getElementById('importPreviewLabel').innerHTML =
+      `<strong style="color:var(--text)">${parsed.length} ativos</strong> encontrados na planilha <em style="color:var(--text3)">(${sheetName})</em>. Escolha como importar:`;
+    preview.style.display = 'block';
+    highlightMode();
+    toast(`${parsed.length} ativos lidos com sucesso`, 'ok');
+  } catch(err) {
+    toast('Erro ao processar planilha: ' + err.message, 'err');
+    console.error(err);
+  }
+}
+
+function highlightMode() {
+  [0,1,2].forEach(i => {
+    const lbl = document.getElementById('modeLabel' + i);
+    if (lbl) lbl.style.borderColor = 'var(--border)';
+  });
+  const sel = document.querySelector('input[name="importMode"]:checked');
+  if (!sel) return;
+  const idx = ['fresh','append','overwrite'].indexOf(sel.value);
+  const lbl = document.getElementById('modeLabel' + idx);
+  if (lbl) lbl.style.borderColor = 'var(--blue)';
+}
+
+async function doImport() {
+  if (!pendingImportData.length) { toast('Nenhum dado para importar', 'err'); return; }
+  const mode = document.querySelector('input[name="importMode"]:checked')?.value || 'fresh';
+  const incoming = pendingImportData.map(a => enrichAsset(a));
+
+  if (mode === 'fresh') {
+    assets = incoming;
+  } else if (mode === 'append') {
+    const existingAmts = new Set(assets.map(a => a.amt));
+    const newOnes = incoming.filter(a => !existingAmts.has(a.amt));
+    assets = [...assets, ...newOnes];
+    toast(`${newOnes.length} novos ativos adicionados`, 'ok');
+  } else if (mode === 'overwrite') {
+    const amtMap = new Map(assets.map(a => [a.amt, a]));
+    incoming.forEach(a => amtMap.set(a.amt, a));
+    assets = Array.from(amtMap.values());
+  }
+
+  if (DEMO) {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(assets));
+  } else {
+    // Supabase bulk upsert
+    const rows = assets.map(a => { const {vida_util_dias,tempo_op_dias,garantia_status,garantia_expira_em,...rest} = a; return rest; });
+    if (mode === 'fresh') {
+      await sb.from('assets').delete().neq('id', 'impossible');
+    }
+    const batch = rows.map(r => ({ ...r, updated_by: currentUser?.id }));
+    const { error } = await sb.from('assets').upsert(batch, { onConflict: 'amt' });
+    if (error) { toast('Erro Supabase: ' + error.message, 'err'); return; }
+    await loadAssets(); closeImport(); return;
+  }
+
+  pendingImportData = [];
+  closeImport();
+  refresh();
+  toast(`Importação concluída — ${assets.length} ativos no sistema`, 'ok');
+}
+
+function confirmClear() {
+  if (!confirm(`Isso vai REMOVER todos os ${assets.length} ativos do sistema. Esta ação não pode ser desfeita. Continuar?`)) return;
+  if (DEMO) {
+    assets = [];
+    localStorage.setItem(LOCAL_KEY, JSON.stringify([]));
+    refresh();
+    toast('Todos os ativos removidos', 'ok');
+  } else {
+    sb.from('assets').delete().neq('id', 'impossible').then(({ error }) => {
+      if (error) toast('Erro: ' + error.message, 'err');
+      else { loadAssets(); toast('Todos os ativos removidos', 'ok'); }
+    });
+  }
+  closeImport();
+}
+
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(assets, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `SIMF_backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  toast('Backup JSON exportado', 'ok');
+}
+
+// Expose SheetJS parse after dynamic load
+window.addEventListener('load', () => {
+  if (window._pendingXlsx && typeof XLSX !== 'undefined') {
+    parseWithSheetJS(window._pendingXlsx);
+    window._pendingXlsx = null;
+  }
+});
+</script>
+</body>
+</html>
