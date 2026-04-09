@@ -319,7 +319,7 @@ tr:hover .row-actions { opacity: 1; }
     <p>Informe as credenciais do seu projeto Supabase. Você encontra essas informações em <strong>Project Settings → API</strong>.</p>
     <div class="config-hint">
       📄 Execute o arquivo <strong>supabase_schema.sql</strong> no SQL Editor do Supabase antes de continuar.<br>
-      🔑 Após criar sua conta, rode: <code>UPDATE profiles SET role = 'admin' WHERE email = 'seu@email.com';</code>
+      🔑 Após criar sua conta, rode: <code>UPDATE profiles SET role = 'admin' WHERE email = '<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="5a293f2f1a3f373b333674393537">[email&#160;protected]</a>';</code>
     </div>
     <div class="form-row"><label>Project URL</label><input id="cfgUrl" placeholder="https://xxxx.supabase.co" value=""></div>
     <div class="form-row"><label>Anon Public Key</label><input id="cfgKey" placeholder="eyJhbGciOiJIUzI1NiIs..." value=""></div>
@@ -730,7 +730,7 @@ tr:hover .row-actions { opacity: 1; }
 <!-- ─── TOAST ─────────────────────────────────────────────────── -->
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 // ═══════════════════════════════════════════════════════════
 // CONFIG & SUPABASE
 // ═══════════════════════════════════════════════════════════
@@ -751,27 +751,26 @@ let pages = { dashboard:1, inventory:1, warranty:1, lifetime:1, logs:1 };
 
 const TODAY = new Date();
 
+// ─── CREDENCIAIS FIXAS ─────────────────────────────────────
+const SUPABASE_URL = 'https://plreaufgwfcoxiypzjcr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBscmVhdWZnd2Zjb3hpeXB6amNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NzM4OTcsImV4cCI6MjA5MTI0OTg5N30.BM0xBSZ8Otwbz2yslNpFD0Vl8oMhyX14I9wne0NEGoQ';
+
 // ─── INIT ──────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  const cfg = getSavedConfig();
-  if (cfg) {
-    initSupabase(cfg.url, cfg.key);
-  } else if (localStorage.getItem(DEMO_MODE_KEY)) {
+  document.getElementById('configPanel').style.display = 'none';
+  if (localStorage.getItem(DEMO_MODE_KEY)) {
     startDemo();
+  } else {
+    initSupabase(SUPABASE_URL, SUPABASE_KEY);
   }
-  // If no config, configPanel stays visible
 });
 
 function getSavedConfig() {
-  try { return JSON.parse(localStorage.getItem(CFG_KEY)); } catch { return null; }
+  return { url: SUPABASE_URL, key: SUPABASE_KEY };
 }
 
 function saveConfig() {
-  const url = document.getElementById('cfgUrl').value.trim();
-  const key = document.getElementById('cfgKey').value.trim();
-  if (!url || !key) { alert('Preencha URL e Key'); return; }
-  localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
-  initSupabase(url, key);
+  initSupabase(SUPABASE_URL, SUPABASE_KEY);
 }
 
 function initSupabase(url, key) {
@@ -799,8 +798,29 @@ function listenAuth() {
 }
 
 async function loadProfile() {
-  const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
-  currentProfile = data;
+  try {
+    const { data, error } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    if (error) {
+      console.warn('loadProfile error:', error.message);
+      // Se não encontrou perfil, cria um viewer por padrão
+      currentProfile = { 
+        id: currentUser.id, 
+        email: currentUser.email,
+        full_name: currentUser.user_metadata?.full_name || currentUser.email,
+        role: 'viewer'
+      };
+    } else {
+      currentProfile = data;
+    }
+  } catch(e) {
+    console.warn('loadProfile exception:', e);
+    currentProfile = { 
+      id: currentUser.id, 
+      email: currentUser.email,
+      full_name: currentUser.email,
+      role: 'viewer'
+    };
+  }
 }
 
 function useDemo() {
@@ -1888,13 +1908,4 @@ function exportJSON() {
   toast('Backup JSON exportado', 'ok');
 }
 
-// Expose SheetJS parse after dynamic load
-window.addEventListener('load', () => {
-  if (window._pendingXlsx && typeof XLSX !== 'undefined') {
-    parseWithSheetJS(window._pendingXlsx);
-    window._pendingXlsx = null;
-  }
-});
-</script>
-</body>
-</html>
+// Expose SheetJS parse afte
